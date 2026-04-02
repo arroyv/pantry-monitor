@@ -563,7 +563,7 @@ function AnomalyLog({ log, nicks }) {
    ═══════════════════════════════════════════════════════════════════ */
 export default function PantryMonitor() {
   const [mode, setMode] = useState(sGet("pm-mode","live"));
-  const [apiBase, setApiBase] = useState(sGet("pm-a","https://pantryapi-web.azurewebsites.net"));
+  const [apiBase, setApiBase] = useState(sGet("pm-a","https://pantryapi-web-d8gzfkftgtb5cfhn.westus2-01.azurewebsites.net"));
   const [webhook, setWebhook] = useState("");
   const [T, setT] = useState(DEFS);
   const [nicks, setNicks] = useState({});
@@ -733,7 +733,7 @@ export default function PantryMonitor() {
           <div style={{ display:"flex", flexWrap:"wrap", gap:10, marginBottom:10 }}>
             <div style={{ flex:"1 1 280px" }}>
               <label style={{ fontSize:11, color:C.txM, display:"block", marginBottom:3 }}>Azure Function Base URL</label>
-              <input value={apiBase} onChange={e=>setApiBase(e.target.value)} placeholder="https://pantryapi-web.azurewebsites.net"
+              <input value={apiBase} onChange={e=>setApiBase(e.target.value)} placeholder="https://pantryapi-web-d8gzfkftgtb5cfhn.westus2-01.azurewebsites.net"
                 style={{ width:"100%", padding:"7px 10px", borderRadius:5, border:`1px solid ${C.borderL}`, backgroundColor:C.bg, color:C.tx, fontSize:12, fontFamily:"'DM Mono',monospace" }}/>
             </div>
             <div style={{ flex:"1 1 280px" }}>
