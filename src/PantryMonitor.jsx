@@ -563,7 +563,7 @@ function AnomalyLog({ log, nicks }) {
    ═══════════════════════════════════════════════════════════════════ */
 export default function PantryMonitor() {
   const [mode, setMode] = useState(sGet("pm-mode","live"));
-  const [apiBase, setApiBase] = useState("");
+  const [apiBase, setApiBase] = useState(sGet("pm-a","https://pantryapi-web.azurewebsites.net"));
   const [webhook, setWebhook] = useState("");
   const [T, setT] = useState(DEFS);
   const [nicks, setNicks] = useState({});
@@ -579,7 +579,6 @@ export default function PantryMonitor() {
   useEffect(() => {
     const t=sGet("pm-t",null); if(t)setT(t);
     const n=sGet("pm-n",null); if(n)setNicks(n);
-    const a=sGet("pm-a",null); if(a)setApiBase(a);
     const w=sGet("pm-w",null); if(w)setWebhook(w);
     const l=sGet("pm-l",null); if(l)setLog(l);
   }, []);
