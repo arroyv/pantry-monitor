@@ -1,29 +1,32 @@
 // Azure Function: pantry-status/index.js
-// 
-// EXISTING BEHAVIOR (unchanged):
+//
+// ═══════════════════════════════════════════════════════════════════
+//  BACKWARD COMPATIBLE
+//  Existing callers get the EXACT same response shape as before.
+//  New "mode=monitor" param enables the dashboard's extended format.
+// ═══════════════════════════════════════════════════════════════════
+//
+// EXISTING (unchanged response shape):
 //   GET /api/pantry-status?pantryId=4015
 //   GET /api/pantry-status?pantryId=BeaconHill
-//   -> Returns single latest record, same response shape as before.
+//   → { pantryId, deviceId, timestamp, weight, temperature,
+//       doorStatus, battery, isAnomaly, statusMessage }
 //
-// NEW: Monitor mode
+// NEW (for the monitoring dashboard):
 //   GET /api/pantry-status?pantryId=all&mode=monitor
-//   -> Returns 1 week of history per device, auto-discovered from DB.
-//   
+//   → auto-discovers all devices, returns 7 days of full history
+//
+//   GET /api/pantry-status?pantryId=4015&mode=monitor
+//   → 7 days of history for one device
+//
 //   GET /api/pantry-status?pantryId=all
-//   -> Returns latest record per device (auto-discovered).
+//   → latest record per device (auto-discovered), full column set
 //
-//   GET /api/pantry-status?pantryId=BeaconHill&mode=monitor
-//   -> Returns 1 week of history for one device.
-//
-// Optional params:
-//   history=N  (max records per device, default 1, max 2000; overridden by mode=monitor)
-//
-// Deploy to: PantryAPI-Web Azure Function App
+// ═══════════════════════════════════════════════════════════════════
 
 const sql = require('mssql');
 
-// Aliases: friendly names -> internal device_id.
-// Only needed for legacy callers. Auto-discovery doesn't use this.
+// Aliases: friendly IDs → internal device_id in DB
 const ALIASES = {
   "4015": "BeaconHill",
   "beaconhill": "BeaconHill",
@@ -39,7 +42,6 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-// All columns we ever return
 const SELECT_COLS = `
   id, device_id, timestamp, is_event,
   air_temp, air_humid, air_pressure,
@@ -55,6 +57,23 @@ const SELECT_COLS = `
   scale1_suspect, scale2_suspect, scale3_suspect, scale4_suspect
 `;
 
+// Build the ORIGINAL response shape so existing callers don't break
+function legacyResponse(row, pantryId, internalDeviceId) {
+  const totalWeight = (row.scale1 || 0) + (row.scale2 || 0)
+                    + (row.scale3 || 0) + (row.scale4 || 0);
+  return {
+    pantryId: pantryId,
+    deviceId: internalDeviceId,
+    timestamp: row.timestamp,
+    weight: totalWeight,
+    temperature: row.air_temp,
+    doorStatus: (row.door1_open || row.door2_open) ? "Open" : "Closed",
+    battery: row.batt_percent,
+    isAnomaly: false,
+    statusMessage: "OK"
+  };
+}
+
 module.exports = async function (context, req) {
   // CORS preflight
   if (req.method === "OPTIONS") {
@@ -65,22 +84,32 @@ module.exports = async function (context, req) {
   const rawId = (req.query.pantryId || "").trim();
   const mode = (req.query.mode || "").toLowerCase();
   const isMonitor = mode === "monitor";
+  const isAll = rawId.toLowerCase() === "all";
 
-  // In monitor mode, pull 1 week. Otherwise respect history param or default to 1.
-  let historyCount;
-  if (isMonitor) {
-    historyCount = 2000; // ~1 week at 10min intervals = 1008, 2000 gives headroom
-  } else {
-    historyCount = Math.min(Math.max(parseInt(req.query.history) || 1, 1), 2000);
+  // ── Validate (preserve original 400 behavior) ─────────────────
+  if (!rawId) {
+    context.res = {
+      status: 400,
+      headers: CORS,
+      body: { error: "Missing pantryId. Use ?pantryId=4015 or ?pantryId=all" }
+    };
+    return;
   }
+
+  // Legacy single-device call without monitor mode?
+  // This is the path existing callers take.
+  const isLegacyCall = !isAll && !isMonitor && !req.query.history;
+
+  const historyCount = isMonitor
+    ? 2000   // ~1 week at 10min = 1008, headroom for multiple devices
+    : Math.min(Math.max(parseInt(req.query.history) || 1, 1), 2000);
 
   let pool;
   try {
     pool = await sql.connect(process.env["SqlConnectionString"]);
 
-    // ── Resolve device list ──────────────────────────────────────
+    // ── Resolve devices ───────────────────────────────────────────
     let deviceIds;
-    const isAll = !rawId || rawId.toLowerCase() === "all";
 
     if (isAll) {
       const disc = await pool.request().query(
@@ -97,16 +126,15 @@ module.exports = async function (context, req) {
       return;
     }
 
-    // ── Fetch data ───────────────────────────────────────────────
+    // ── Query each device ─────────────────────────────────────────
     const results = {};
 
     for (const deviceId of deviceIds) {
-      let query;
       const request = pool.request()
         .input('deviceId', sql.NVarChar, deviceId);
 
+      let query;
       if (isMonitor) {
-        // Time-bounded: last 7 days
         query = `
           SELECT ${SELECT_COLS}
           FROM dbo.PantryLogs
@@ -115,7 +143,6 @@ module.exports = async function (context, req) {
           ORDER BY timestamp DESC
         `;
       } else {
-        // Row-count bounded (original behavior)
         request.input('count', sql.Int, historyCount);
         query = `
           SELECT TOP (@count) ${SELECT_COLS}
@@ -128,15 +155,30 @@ module.exports = async function (context, req) {
       const result = await request.query(query);
 
       if (result.recordset.length === 0) {
+        // Legacy callers got 404 for no data
+        if (isLegacyCall) {
+          context.res = { status: 404, headers: CORS, body: { error: "No data found" } };
+          return;
+        }
         results[deviceId] = { device_id: deviceId, timestamp: null, error: "No data" };
         continue;
       }
 
-      // ── Response shape depends on mode ─────────────────────────
+      // ── Build response per device ─────────────────────────────
+      if (isLegacyCall) {
+        // EXACT original response shape
+        context.res = {
+          headers: CORS,
+          body: legacyResponse(result.recordset[0], rawId, deviceId)
+        };
+        return;
+      }
+
       if (historyCount === 1 && !isMonitor) {
-        // LEGACY: single record, flat object (no "history" wrapper)
+        // Single record, full column set (new callers using pantryId=X)
         results[deviceId] = result.recordset[0];
       } else {
+        // History array
         results[deviceId] = {
           device_id: deviceId,
           latest: result.recordset[0],
@@ -146,19 +188,16 @@ module.exports = async function (context, req) {
       }
     }
 
-    // Single device without "all": return its data directly (backward compat)
-    const body = (!isAll && deviceIds.length === 1)
-      ? results[deviceIds[0]]
-      : results;
-
-    context.res = { headers: CORS, body };
+    // "all" or multi-device: return keyed object
+    context.res = { headers: CORS, body: results };
 
   } catch (err) {
     context.log.error("DB error:", err.message);
     context.res = {
       status: 500,
       headers: CORS,
-      body: { error: "Database error", detail: err.message },
+      // Original returned just a string for errors
+      body: isLegacyCall ? "Database Error" : { error: "Database error", detail: err.message },
     };
   } finally {
     if (pool) await pool.close();
