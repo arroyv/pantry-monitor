@@ -370,7 +370,7 @@ const SC = { critical:C.cr, warning:C.wr, info:C.in, ok:C.ok };
 const SB = { critical:C.crB, warning:C.wrB, info:C.inB, ok:C.okB };
 const SR = { critical:C.crBr, warning:C.wrBr, info:C.inBr, ok:C.okBr };
 
-const GROUPS = ["Connectivity","Power","Environment","Scales","Doors","Events","Time Series","System"];
+const GROUPS = ["Scales","Doors","Connectivity","Power","Environment","Events","Time Series","System"];
 const GROUP_ICONS = { Connectivity:"📡", Power:"🔋", Environment:"🌡", Scales:"⚖", Doors:"🚪", Events:"⚡", "Time Series":"📈", System:"💾" };
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -559,6 +559,230 @@ function AnomalyLog({ log, nicks }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   SVG CHART HELPERS
+   ═══════════════════════════════════════════════════════════════════ */
+function MiniLine({ data, getVal, color, W, H, mn, mx }) {
+  const range = mx - mn || 1;
+  const toX = i => (i / Math.max(data.length - 1, 1)) * W;
+  const toY = v => (H - 4) - (H - 8) * ((v - mn) / range);
+  let d = "", gap = true;
+  data.forEach((item, i) => {
+    const v = getVal(item);
+    if (v === null) { gap = true; return; }
+    d += `${gap ? "M" : "L"}${toX(i).toFixed(1)},${toY(v).toFixed(1)} `;
+    gap = false;
+  });
+  return d ? <path d={d.trim()} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" strokeLinejoin="round"/> : null;
+}
+
+function RefLine({ y, color, W, label }) {
+  return <>
+    <line x1="0" y1={y} x2={W} y2={y} stroke={color} strokeWidth="0.5" strokeDasharray="3,2" opacity="0.6"/>
+    {label && <text x={W - 2} y={y - 2} textAnchor="end" fontSize="7" fill={color} opacity="0.8">{label}</text>}
+  </>;
+}
+
+const SCALE_COLORS = [C.acc, C.ok, C.wr, "#a371f7"];
+
+function ScaleChart({ history, T }) {
+  const data = [...history].reverse();
+  if (data.length < 2) return <div style={{color:C.txM,fontSize:11,padding:20,textAlign:"center"}}>Not enough data</div>;
+  const allVals = data.flatMap(d => [1,2,3,4].map(i => N(d[`scale${i}`])).filter(v => v !== null));
+  if (!allVals.length) return null;
+  const mn = Math.min(0, Math.min(...allVals));
+  const mx = Math.max(T.scaleMax * 1.1, Math.max(...allVals) * 1.05);
+  const W = 500, H = 90;
+  const toY = v => (H - 4) - (H - 8) * ((v - mn) / (mx - mn || 1));
+  return (
+    <div>
+      <div style={{display:"flex",gap:12,marginBottom:6,fontSize:10,flexWrap:"wrap"}}>
+        {[1,2,3,4].map(i => <span key={i} style={{color:SCALE_COLORS[i-1]}}>● S{i}</span>)}
+        <span style={{marginLeft:"auto",color:C.txM}}>{data.length} readings</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:H}} preserveAspectRatio="none">
+        <RefLine y={toY(T.scaleMax)} color={C.wr} W={W} label={`max ${T.scaleMax}`}/>
+        {mn < 0 && <RefLine y={toY(0)} color={C.border} W={W}/>}
+        {[1,2,3,4].map(i => <MiniLine key={i} data={data} getVal={d=>N(d[`scale${i}`])} color={SCALE_COLORS[i-1]} W={W} H={H} mn={mn} mx={mx}/>)}
+      </svg>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:C.txM,marginTop:2}}>
+        <span>7 days ago</span><span>now</span>
+      </div>
+    </div>
+  );
+}
+
+function DoorTimeline({ history }) {
+  const data = [...history].reverse();
+  const W = 500, H = 44;
+  const toX = i => (i / Math.max(data.length - 1, 1)) * W;
+  const eventCount = data.filter(d => toBool(d.door1_open) || toBool(d.door2_open)).length;
+  return (
+    <div>
+      <div style={{display:"flex",gap:12,marginBottom:6,fontSize:10}}>
+        <span style={{color:C.acc}}>● Door 1</span>
+        <span style={{color:C.ok}}>● Door 2</span>
+        <span style={{color:C.wr}}>● Both</span>
+        <span style={{marginLeft:"auto",color:C.txM}}>{eventCount} open events</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:H}} preserveAspectRatio="none">
+        <rect x="0" y="1" width={W} height={H/2-2} fill={`${C.border}30`} rx="1"/>
+        <rect x="0" y={H/2+1} width={W} height={H/2-2} fill={`${C.border}30`} rx="1"/>
+        {data.map((d, i) => {
+          const d1 = toBool(d.door1_open), d2 = toBool(d.door2_open);
+          if (!d1 && !d2) return null;
+          const x = toX(i).toFixed(1);
+          const clr = d1 && d2 ? C.wr : d1 ? C.acc : C.ok;
+          return <g key={i}>
+            {d1 && <line x1={x} y1="3" x2={x} y2={H/2-3} stroke={clr} strokeWidth="1.5" opacity="0.8" vectorEffect="non-scaling-stroke"/>}
+            {d2 && <line x1={x} y1={H/2+3} x2={x} y2={H-3} stroke={clr} strokeWidth="1.5" opacity="0.8" vectorEffect="non-scaling-stroke"/>}
+          </g>;
+        })}
+      </svg>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:C.txM,marginTop:2}}>
+        <span>7 days ago</span><span>now</span>
+      </div>
+    </div>
+  );
+}
+
+function BatteryChart({ history, T }) {
+  const data = [...history].reverse();
+  const W = 500, H = 60;
+  const mn = 0, mx = 105;
+  const toY = v => (H - 4) - (H - 8) * ((v - mn) / (mx - mn));
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:H}} preserveAspectRatio="none">
+        <RefLine y={toY(T.battLow)} color={C.wr} W={W} label={`warn ${T.battLow}%`}/>
+        <RefLine y={toY(T.battCritical)} color={C.cr} W={W} label={`crit ${T.battCritical}%`}/>
+        <MiniLine data={data} getVal={d=>N(d.batt_percent)} color={C.ok} W={W} H={H} mn={mn} mx={mx}/>
+      </svg>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:C.txM,marginTop:2}}>
+        <span>7 days ago</span><span>now</span>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DIAGNOSTICS TAB
+   ═══════════════════════════════════════════════════════════════════ */
+function DiagnosticsTab({ analysis, nicks, T }) {
+  const devs = Object.keys(analysis);
+  const [sel, setSel] = useState(devs[0] || "");
+  useEffect(() => { if (!sel && devs.length) setSel(devs[0]); }, [devs]);
+  const dev = analysis[sel];
+  const sdIssues = dev?.issues.filter(i => i.g === "Scales" || i.g === "Doors") || [];
+  const otherIssues = dev?.issues.filter(i => i.g !== "Scales" && i.g !== "Doors") || [];
+  const panel = (title, children) => (
+    <div style={{padding:14,borderRadius:8,backgroundColor:C.card,border:`1px solid ${C.border}`}}>
+      <div style={{fontSize:12,fontWeight:700,color:C.tx,marginBottom:12}}>{title}</div>
+      {children}
+    </div>
+  );
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <select value={sel} onChange={e=>setSel(e.target.value)}
+          style={{padding:"6px 10px",borderRadius:5,border:`1px solid ${C.border}`,backgroundColor:C.card,color:C.tx,fontSize:13,cursor:"pointer"}}>
+          {devs.map(id=><option key={id} value={id}>{nicks[id]||id}</option>)}
+        </select>
+        {dev && <Tag s={dev.status}>{dev.status}</Tag>}
+        {dev && <span style={{fontSize:11,color:C.txM}}>{dev.history.length} readings · {dev.issues.length} findings</span>}
+      </div>
+      {dev && <>
+        {sdIssues.length > 0 && (
+          <div style={{padding:10,borderRadius:8,backgroundColor:C.card,border:`1px solid ${C.crBr}`}}>
+            <div style={{fontSize:10,color:C.cr,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:700,marginBottom:6}}>⚖ Scale & Door Findings</div>
+            {sdIssues.map((iss,i) => <div key={i} style={{padding:"4px 10px",marginBottom:2,borderRadius:4,fontSize:12,borderLeft:`3px solid ${SC[iss.s]}`,color:SC[iss.s],backgroundColor:SB[iss.s]}}>
+              <span style={{fontWeight:600,fontSize:10,textTransform:"uppercase",opacity:0.7,marginRight:6}}>{iss.t.replace(/_/g," ")}</span>{iss.m}
+            </div>)}
+          </div>
+        )}
+        {panel("⚖ Scale Readings (lbs)", <ScaleChart history={dev.history} T={T}/>)}
+        {panel("🚪 Door Events", <DoorTimeline history={dev.history}/>)}
+        {panel("🔋 Battery Trend", <BatteryChart history={dev.history} T={T}/>)}
+        {otherIssues.length > 0 && panel("Other Findings", otherIssues.map((iss,i) => (
+          <div key={i} style={{padding:"4px 10px",marginBottom:2,borderRadius:4,fontSize:12,borderLeft:`3px solid ${SC[iss.s]}`,color:SC[iss.s],backgroundColor:SB[iss.s]}}>
+            <span style={{fontWeight:600,fontSize:10,textTransform:"uppercase",opacity:0.7,marginRight:6}}>{iss.g} · {iss.t.replace(/_/g," ")}</span>{iss.m}
+          </div>
+        )))}
+      </>}
+      {!dev && <div style={{padding:40,textAlign:"center",color:C.txM}}>No pantry selected</div>}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DATA EXPLORER TAB
+   ═══════════════════════════════════════════════════════════════════ */
+function DataExplorerTab({ analysis, nicks }) {
+  const devs = Object.keys(analysis);
+  const [sel, setSel] = useState(devs[0] || "");
+  useEffect(() => { if (!sel && devs.length) setSel(devs[0]); }, [devs]);
+  const rows = analysis[sel]?.history || [];
+  const TH = ({ children, right }) => (
+    <th style={{padding:"6px 8px",textAlign:right?"right":"left",color:C.txM,fontWeight:600,borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,backgroundColor:C.card,fontSize:10,whiteSpace:"nowrap"}}>{children}</th>
+  );
+  const TD = ({ children, mono, color, right, bg }) => (
+    <td style={{padding:"5px 8px",color:color||C.tx,fontFamily:mono?"'DM Mono',monospace":"inherit",fontSize:11,textAlign:right?"right":"left",backgroundColor:bg,whiteSpace:"nowrap"}}>{children}</td>
+  );
+  const scaleCell = (row, i) => {
+    const v = N(row[`scale${i}`]);
+    const disc = toBool(row[`scale${i}_disconnect`]);
+    const susp = toBool(row[`scale${i}_suspect`]);
+    return <TD key={i} mono right color={disc?C.cr:susp?C.wr:C.tx} bg={disc?C.crB:susp?C.wrB:undefined}>
+      {disc?"DISC":susp?`${v?.toFixed(2)||"--"}⚠`:v?.toFixed(2)??"--"}
+    </TD>;
+  };
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <select value={sel} onChange={e=>setSel(e.target.value)}
+          style={{padding:"6px 10px",borderRadius:5,border:`1px solid ${C.border}`,backgroundColor:C.card,color:C.tx,fontSize:13,cursor:"pointer"}}>
+          {devs.map(id=><option key={id} value={id}>{nicks[id]||id}</option>)}
+        </select>
+        {rows.length > 0 && <span style={{fontSize:11,color:C.txM}}>{rows.length} readings · newest first</span>}
+      </div>
+      {rows.length > 0 ? (
+        <div style={{borderRadius:8,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+          <div style={{maxHeight:520,overflowY:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead><tr>
+                <TH>Time</TH>
+                <TH right>S1</TH><TH right>S2</TH><TH right>S3</TH><TH right>S4</TH>
+                <TH right>Total</TH>
+                <TH right>D1</TH><TH right>D2</TH>
+                <TH right>Temp°C</TH><TH right>Humid%</TH>
+                <TH right>Batt%</TH><TH right>RSSI</TH>
+              </tr></thead>
+              <tbody>
+                {rows.map((r, i) => {
+                  const total = [1,2,3,4].reduce((s,j) => s+(N(r[`scale${j}`])||0), 0);
+                  const d1=toBool(r.door1_open), d2=toBool(r.door2_open);
+                  const b=N(r.batt_percent), rssi=N(r.rssi);
+                  return <tr key={i} style={{borderBottom:`1px solid ${C.border}20`,backgroundColor:i%2===0?"transparent":`${C.card}40`}}>
+                    <TD mono>{new Date(r.timestamp).toLocaleString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</TD>
+                    {[1,2,3,4].map(j=>scaleCell(r,j))}
+                    <TD mono right color={C.acc}>{total.toFixed(2)}</TD>
+                    <TD right color={d1?C.wr:C.txM}>{d1?"OPEN":"–"}</TD>
+                    <TD right color={d2?C.wr:C.txM}>{d2?"OPEN":"–"}</TD>
+                    <TD mono right>{N(r.air_temp)?.toFixed(1)??"--"}</TD>
+                    <TD mono right>{N(r.air_humid)?.toFixed(0)??"--"}</TD>
+                    <TD mono right color={b<=10?C.cr:b<=20?C.wr:C.tx}>{b??"--"}</TD>
+                    <TD mono right color={rssi<-90?C.cr:rssi<-85?C.wr:C.tx}>{rssi??"--"}</TD>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : <div style={{padding:40,textAlign:"center",color:C.txM}}>No data for this pantry</div>}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    MAIN APP
    ═══════════════════════════════════════════════════════════════════ */
 export default function PantryMonitor() {
@@ -642,7 +866,16 @@ export default function PantryMonitor() {
 
   const sortedDevs = useMemo(()=>{
     const ord={critical:0,warning:1,info:2,ok:3};
-    return Object.keys(analysis).sort((a,b)=>(ord[analysis[a].status]??4)-(ord[analysis[b].status]??4));
+    const sdScore = dev => {
+      const iss = analysis[dev].issues;
+      if (iss.some(i=>(i.g==="Scales"||i.g==="Doors")&&i.s==="critical")) return 0;
+      if (iss.some(i=>(i.g==="Scales"||i.g==="Doors")&&i.s==="warning")) return 1;
+      return 2;
+    };
+    return Object.keys(analysis).sort((a,b)=>{
+      const d=(ord[analysis[a].status]??4)-(ord[analysis[b].status]??4);
+      return d!==0?d:sdScore(a)-sdScore(b);
+    });
   },[analysis]);
 
   const critN = Object.values(analysis).filter(r=>r.status==="critical").length;
@@ -683,7 +916,7 @@ export default function PantryMonitor() {
 
       {/* Tabs */}
       <div style={{ display:"flex", gap:2, marginBottom:14, borderBottom:`1px solid ${C.border}`, paddingBottom:1 }}>
-        {[{id:"dashboard",l:"Dashboard"},{id:"log",l:`Log (${log.length})`},{id:"settings",l:"Settings"}].map(t=>
+        {[{id:"dashboard",l:"Dashboard"},{id:"charts",l:"Diagnostics"},{id:"explorer",l:"Data"},{id:"log",l:`Log (${log.length})`},{id:"settings",l:"Settings"}].map(t=>
           <button key={t.id} onClick={()=>setTab(t.id)} style={{ padding:"6px 14px", fontSize:12, fontWeight:tab===t.id?700:400, cursor:"pointer", border:"none", borderBottom:`2px solid ${tab===t.id?C.acc:"transparent"}`, backgroundColor:"transparent", color:tab===t.id?C.acc:C.txD }}>{t.l}</button>
         )}
       </div>
@@ -718,6 +951,12 @@ export default function PantryMonitor() {
           </div>
         </div>
       </div>}
+
+      {/* Diagnostics */}
+      {tab==="charts" && <DiagnosticsTab analysis={analysis} nicks={nicks} T={T}/>}
+
+      {/* Data Explorer */}
+      {tab==="explorer" && <DataExplorerTab analysis={analysis} nicks={nicks}/>}
 
       {/* Log */}
       {tab==="log" && <div>
