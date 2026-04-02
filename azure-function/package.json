@@ -1,0 +1,9 @@
+{
+  "name": "pantry-status-function",
+  "version": "1.0.0",
+  "description": "Azure Function for pantry sensor API",
+  "main": "pantry-status/index.js",
+  "dependencies": {
+    "mssql": "^10.0.4"
+  }
+}
