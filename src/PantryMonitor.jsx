@@ -562,7 +562,7 @@ function AnomalyLog({ log, nicks }) {
    MAIN APP
    ═══════════════════════════════════════════════════════════════════ */
 export default function PantryMonitor() {
-  const [mode, setMode] = useState("demo");
+  const [mode, setMode] = useState(sGet("pm-mode","live"));
   const [apiBase, setApiBase] = useState("");
   const [webhook, setWebhook] = useState("");
   const [T, setT] = useState(DEFS);
@@ -583,6 +583,7 @@ export default function PantryMonitor() {
     const w=sGet("pm-w",null); if(w)setWebhook(w);
     const l=sGet("pm-l",null); if(l)setLog(l);
   }, []);
+  useEffect(()=>{sSet("pm-mode",mode);},[mode]);
   useEffect(()=>{sSet("pm-t",T);},[T]);
   useEffect(()=>{sSet("pm-n",nicks);},[nicks]);
   useEffect(()=>{sSet("pm-a",apiBase);},[apiBase]);
