@@ -594,7 +594,7 @@ export default function PantryMonitor() {
   const fetchLive = useCallback(async()=>{
     if(!apiBase) return; setLoading(true); setErr(null);
     try {
-      const r = await fetch(`${apiBase.replace(/\/$/,"")}/api/pantry-status?pantryId=all&mode=monitor`, { cache: "no-store" });
+      const r = await fetch(`${apiBase.replace(/\/$/,"")}/api/GetLatestPantry?pantryId=all&mode=monitor`, { cache: "no-store" });
       if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
       const mapped = {};
@@ -766,7 +766,7 @@ export default function PantryMonitor() {
         <div style={{ padding:14, borderRadius:8, backgroundColor:C.card, border:`1px solid ${C.border}` }}>
           <div style={{ fontSize:13, fontWeight:700, color:C.tx, marginBottom:8 }}>API Contract</div>
           <div style={{ fontSize:12, color:C.txD, lineHeight:1.6 }}>
-            <p style={{marginBottom:6}}>Monitor mode: <code style={{color:C.acc,fontFamily:"'DM Mono',monospace",fontSize:11}}>GET /api/pantry-status?pantryId=all&mode=monitor</code></p>
+            <p style={{marginBottom:6}}>Monitor mode: <code style={{color:C.acc,fontFamily:"'DM Mono',monospace",fontSize:11}}>GET /api/GetLatestPantry?pantryId=all&mode=monitor</code></p>
             <p style={{marginBottom:6}}>Returns 1 week of history per device. Existing callers without <code style={{color:C.acc,fontFamily:"'DM Mono',monospace",fontSize:11}}>mode=monitor</code> get the same response as before (single latest record).</p>
             <p>CORS: <code style={{color:C.acc,fontFamily:"'DM Mono',monospace",fontSize:11}}>Access-Control-Allow-Origin: *</code></p>
           </div>
