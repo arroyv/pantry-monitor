@@ -787,34 +787,39 @@ function DataExplorerTab({ analysis, nicks }) {
    ═══════════════════════════════════════════════════════════════════ */
 function friendlyInsight(iss) {
   const map = {
-    offline:      "We haven't heard from this pantry in a while — worth a check-in!",
-    stale:        "Taking a little longer to report than usual",
-    no_data:      "No recent data — might be worth a quick look",
-    battery:      "Battery is running low — a recharge would help!",
-    batt_cal:     "Battery reading looks a touch off — normal sensor quirk",
-    temp:         "Temperature is outside the typical range — interesting!",
-    humidity:     "Humidity is a bit high today",
-    iaq:          "Air quality sensor noticed something interesting",
-    eco2:         "CO₂ levels are a little elevated — good ventilation tip!",
-    rssi:         "Signal is a little weak — sensor is doing its best!",
-    scale_neg:    "One scale dipped below zero — might need a small recalibration",
-    scale_bounds: "A scale reading looks high — could be a big donation!",
-    scale_disc:   "A scale sensor went quiet — worth investigating",
-    scale_suspect:"One scale flagged itself — sensor being extra cautious",
-    flatline:     "Scale readings have been super consistent lately",
-    spike:        "Noticed a big weight change — possibly a fresh delivery!",
-    all_zero:     "All sensors read zero — device might need a restart",
-    door_stuck:   "Door has been open for a while — maybe propped open?",
-    door_freq:    "Lots of door activity — this pantry is popular today!",
-    door_unused:  "One door hasn't been used recently",
-    event_burst:  "A flurry of activity detected — busy pantry!",
-    batt_drain:   "Battery draining a bit faster than usual",
-    interval:     "Reporting timing has been a little irregular",
-    rssi_trend:   "Signal has been slowly fading — might move the sensor",
-    temp_trend:   "Temperature has been gradually shifting",
-    gas_drift:    "Air sensor is still warming up and calibrating",
-    bsec_stuck:   "Air quality sensor is still calibrating",
-    mem_drop:     "Memory usage trending up — minor technical note",
+    offline:         "We haven't heard from this pantry in a while — worth a check-in!",
+    stale:           "Taking a little longer to report than usual",
+    no_data:         "No recent data — might be worth a quick look",
+    battery:         "Battery is running low — a recharge would help!",
+    batt_cal:        "Battery reading looks a touch off — normal sensor quirk",
+    batt_drain:      "Battery draining a bit faster than usual",
+    temp:            "Temperature is outside the typical range — interesting!",
+    humidity:        "Humidity is a bit high today",
+    iaq:             "Air quality sensor noticed something interesting",
+    eco2:            "CO₂ levels are a little elevated — good ventilation tip!",
+    rssi:            "Signal is a little weak — sensor is doing its best!",
+    rssi_trend:      "Signal has been slowly fading — might move the sensor",
+    scale_neg:       "One scale dipped below zero — might need a small recalibration",
+    scale_high:      "A scale reading looks high — could be a big donation!",
+    scale_disc:      "A scale sensor went quiet — worth investigating",
+    scale_susp:      "One scale flagged itself — sensor being extra cautious",
+    flatline:        "Scale readings have been super consistent lately",
+    spike:           "Noticed a big weight change — possibly a fresh delivery!",
+    all_zero:        "All sensors read zero — device might need a restart",
+    door:            "A door is currently open",
+    door_sustained:  "Door has been open for a while — maybe propped open?",
+    door_busy:       "Lots of door activity — this pantry is popular today!",
+    door_unused:     "One door hasn't been used recently",
+    event_burst:     "A flurry of activity detected — busy pantry!",
+    event_increase:  "Event activity has been picking up recently",
+    event_silence:   "Event activity seems to have quieted down",
+    interval_drift:  "Reporting timing has been a little irregular",
+    temp_trend:      "Temperature has been gradually shifting",
+    gas_drift:       "Air sensor is still warming up and calibrating",
+    bsec:            "Air quality sensor is still calibrating",
+    bsec_stuck:      "Air quality sensor has been calibrating for a while",
+    mem_leak:        "Memory usage trending up — minor technical note",
+    food_probe:      "Food temperature probe is disconnected",
   };
   return map[iss.t] || iss.m;
 }
@@ -917,6 +922,7 @@ export default function PantryMonitor() {
       for (const [k,v] of Object.entries(data)) {
         if(v.history) mapped[k] = v.history;
         else if(v.timestamp) mapped[k] = [v];
+        else mapped[k] = []; // device in DB but no recent data — will show as offline
       }
       setPH(mapped); setLastR(new Date());
     } catch(e){ setErr(`Fetch failed: ${e.message}`); }
