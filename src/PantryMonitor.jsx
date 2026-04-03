@@ -820,9 +820,12 @@ function ScaleChart({ history, T }) {
   const allVals = data.flatMap(d => [1,2,3,4].map(i => N(d[`scale${i}`])).filter(v => v !== null));
   if (!allVals.length) return null;
   const mn = Math.min(0, Math.min(...allVals));
-  const mx = Math.max(T.scaleMax * 1.1, Math.max(...allVals) * 1.05);
+  const dataMax = Math.max(...allVals);
+  // Auto-scale Y to data; only extend to scaleMax if data is already over half of it
+  const mx = dataMax > T.scaleMax * 0.5
+    ? Math.max(T.scaleMax * 1.1, dataMax * 1.05)
+    : Math.max(dataMax * 1.3, 2);
   const totals = data.map(d => [1,2,3,4].reduce((s,i) => s + (N(d[`scale${i}`])||0), 0));
-  const maxTotal = Math.max(...totals);
   const W = 500, H = 100;
   const t0 = new Date(data[0].timestamp).getTime();
   const t1 = new Date(data[data.length-1].timestamp).getTime();
@@ -838,7 +841,7 @@ function ScaleChart({ history, T }) {
       </>}>
       <DayLines data={data} W={W} H={H}/>
       <GridLine y={toY(mid)} W={W} H={H}/>
-      <RefLine y={toY(T.scaleMax)} color={C.wr} W={W} label={`max ${T.scaleMax} lbs`}/>
+      {T.scaleMax <= mx && <RefLine y={toY(T.scaleMax)} color={C.wr} W={W} label={`max ${T.scaleMax} lbs`}/>}
       {mn < 0 && <RefLine y={toY(0)} color={C.txM} W={W}/>}
       {/* Individual scales */}
       {[1,2,3,4].map(i => {
