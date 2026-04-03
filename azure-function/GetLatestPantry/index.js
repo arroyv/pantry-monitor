@@ -101,8 +101,8 @@ module.exports = async function (context, req) {
   const isLegacyCall = !isAll && !isMonitor && !req.query.history;
 
   const historyCount = isMonitor
-    ? 2000   // ~1 week at 10min = 1008, headroom for multiple devices
-    : Math.min(Math.max(parseInt(req.query.history) || 1, 1), 2000);
+    ? 5000   // ~30 days at 10min = 4320, with headroom
+    : Math.min(Math.max(parseInt(req.query.history) || 1, 1), 5000);
 
   let pool;
   try {
@@ -133,11 +133,12 @@ module.exports = async function (context, req) {
 
       let query;
       if (isMonitor) {
+        request.input('count', sql.Int, historyCount);
         query = `
-          SELECT ${SELECT_COLS}
+          SELECT TOP (@count) ${SELECT_COLS}
           FROM dbo.PantryLogs
           WHERE device_id = @deviceId
-            AND timestamp >= DATEADD(day, -7, GETUTCDATE())
+            AND timestamp >= DATEADD(day, -30, GETUTCDATE())
           ORDER BY timestamp DESC
         `;
       } else {

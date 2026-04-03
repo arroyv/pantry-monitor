@@ -1470,7 +1470,7 @@ export default function PantryMonitor() {
       </div>}
 
       <div style={{ marginTop:20, fontSize:10, color:C.txM, textAlign:"center" }}>
-        Pantry Monitor v3 | 1-week analysis window | {Object.keys(TMETA).length} thresholds | 18 check types across {GROUPS.length} domains | auto-refresh 5min
+        Pantry Monitor v3 | 30-day analysis window | {Object.keys(TMETA).length} thresholds | 18 check types across {GROUPS.length} domains | auto-refresh 5min
       </div>
     </div>
   );
