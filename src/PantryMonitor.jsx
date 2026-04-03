@@ -55,7 +55,7 @@ const toBool = v => v === true || v === 1 || String(v).toLowerCase() === "true";
 const N = v => { const n = Number(v); return isNaN(n) ? null : n; };
 const fKey = k => ({ air_temp:"Temp", air_humid:"Humidity", scale1:"Scale 1", scale2:"Scale 2", scale3:"Scale 3", scale4:"Scale 4", batt_percent:"Battery", iaq:"IAQ", static_iaq:"Static IAQ", eco2:"eCO2", bvoc:"bVOC", gas_resistance:"Gas Res", rssi:"RSSI", memory_free:"Memory" }[k] || k);
 
-function pointChecks(row, T) {
+function pointChecks(row, T, history) {
   const iss = [];
   if (!row?.timestamp) { iss.push({ s:"critical", t:"no_data", m:"No data received", g:"Connectivity" }); return iss; }
   const ageMin = (Date.now() - new Date(row.timestamp).getTime()) / 60000;
@@ -73,6 +73,9 @@ function pointChecks(row, T) {
   if (temp !== null && (temp < T.tempMin || temp > T.tempMax)) iss.push({ s:"warning", t:"temp", m:`Temp out of range: ${temp}C`, g:"Environment" });
   const hum = N(row.air_humid);
   if (hum !== null && hum > T.humidityMax) iss.push({ s:"warning", t:"humidity", m:`Humidity high: ${hum}%`, g:"Environment" });
+  const pres = N(row.air_pressure);
+  if (pres !== null && pres > 0 && (pres < 800 || pres > 1200))
+    iss.push({ s:"warning", t:"pressure", m:`Pressure sensor fault: ${pres} hPa (expected 800-1200)`, g:"Environment" });
 
   const iaq = N(row.iaq);
   if (iaq !== null && iaq > 0) {
@@ -86,7 +89,10 @@ function pointChecks(row, T) {
   }
 
   const foodT = N(row.food_temp);
-  if (foodT === -127) iss.push({ s:"info", t:"food_probe", m:"Food temp probe disconnected (-127)", g:"Environment" });
+  // Only flag food probe if it was previously connected (history shows a value != -127)
+  // Devices that never had a probe always read -127 — suppress to reduce noise
+  if (foodT === -127 && history && history.some(r => { const v = N(r.food_temp); return v !== null && v !== -127; }))
+    iss.push({ s:"info", t:"food_probe", m:"Food temp probe disconnected (-127)", g:"Environment" });
 
   const rssi = N(row.rssi);
   if (rssi !== null) {
@@ -110,7 +116,9 @@ function pointChecks(row, T) {
   }
 
   const acc = N(row.accuracy);
-  if (acc === 0) iss.push({ s:"info", t:"bsec", m:"BSEC uncalibrated (accuracy=0)", g:"System" });
+  // Only flag per-reading if it changed recently; if all history is 0 the ts-check bsec_stuck covers it
+  if (acc === 0 && history && history.some(r => { const v = N(r.accuracy); return v !== null && v > 0; }))
+    iss.push({ s:"info", t:"bsec", m:"BSEC uncalibrated (accuracy=0)", g:"System" });
 
   return iss;
 }
@@ -123,8 +131,12 @@ function timeSeriesChecks(history, T) {
   const spanHours = (new Date(sorted[len-1].timestamp) - new Date(sorted[0].timestamp)) / 3.6e6;
 
   // ── Interval drift ──
+  // Only use gaps >= 1 min so event-driven bursts (seconds apart) don't drag median to ~0
   const gaps = [];
-  for (let i = 1; i < len; i++) gaps.push((new Date(sorted[i].timestamp) - new Date(sorted[i-1].timestamp)) / 60000);
+  for (let i = 1; i < len; i++) {
+    const g = (new Date(sorted[i].timestamp) - new Date(sorted[i-1].timestamp)) / 60000;
+    if (g >= 1) gaps.push(g);
+  }
   if (gaps.length > 2) {
     const med = [...gaps].sort((a,b) => a-b)[Math.floor(gaps.length/2)];
     const last = gaps[gaps.length-1];
@@ -1269,7 +1281,7 @@ export default function PantryMonitor() {
     for (const [dev,hist] of Object.entries(pH)) {
       const sorted = [...hist].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
       const latest = sorted[0];
-      const pt = latest ? pointChecks(latest, T) : [{s:"critical",t:"no_data",m:"No data",g:"Connectivity"}];
+      const pt = latest ? pointChecks(latest, T, sorted) : [{s:"critical",t:"no_data",m:"No data",g:"Connectivity"}];
       const ts = timeSeriesChecks(hist, T);
       const all = [...pt,...ts];
       const diag = diagnose(all, sorted);
