@@ -933,8 +933,11 @@ function BatteryChart({ history, T }) {
    ═══════════════════════════════════════════════════════════════════ */
 function DiagnosticsTab({ analysis, nicks, T }) {
   const devs = Object.keys(analysis);
-  const [sel, setSel] = useState(devs[0] || "");
-  useEffect(() => { if (!sel && devs.length) setSel(devs[0]); }, [devs]);
+  const firstWithData = devs.find(id => (analysis[id]?.history?.length ?? 0) > 1) || devs[0] || "";
+  const [sel, setSel] = useState(firstWithData);
+  useEffect(() => {
+    if (!sel && devs.length) setSel(devs.find(id => (analysis[id]?.history?.length ?? 0) > 1) || devs[0]);
+  }, [devs]);
   const dev = analysis[sel];
   const sdIssues = dev?.issues.filter(i => i.g === "Scales" || i.g === "Doors") || [];
   const otherIssues = dev?.issues.filter(i => i.g !== "Scales" && i.g !== "Doors") || [];
