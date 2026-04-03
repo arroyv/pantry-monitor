@@ -126,10 +126,8 @@ module.exports = async function (context, req) {
       return;
     }
 
-    // ── Query each device ─────────────────────────────────────────
-    const results = {};
-
-    for (const deviceId of deviceIds) {
+    // ── Query each device in parallel ────────────────────────────
+    const queryDevice = async (deviceId) => {
       const request = pool.request()
         .input('deviceId', sql.NVarChar, deviceId);
 
@@ -154,39 +152,35 @@ module.exports = async function (context, req) {
 
       const result = await request.query(query);
 
-      if (result.recordset.length === 0) {
-        // Legacy callers got 404 for no data
-        if (isLegacyCall) {
-          context.res = { status: 404, headers: CORS, body: { error: "No data found" } };
-          return;
-        }
-        results[deviceId] = { device_id: deviceId, timestamp: null, error: "No data" };
-        continue;
-      }
+      if (result.recordset.length === 0)
+        return [deviceId, { device_id: deviceId, timestamp: null, error: "No data" }];
 
-      // ── Build response per device ─────────────────────────────
-      if (isLegacyCall) {
-        // EXACT original response shape
-        context.res = {
-          headers: CORS,
-          body: legacyResponse(result.recordset[0], rawId, deviceId)
-        };
+      if (historyCount === 1 && !isMonitor)
+        return [deviceId, result.recordset[0]];
+
+      return [deviceId, {
+        device_id: deviceId,
+        latest: result.recordset[0],
+        count: result.recordset.length,
+        history: result.recordset,
+      }];
+    };
+
+    // Legacy single-device path returns early (unchanged behavior)
+    if (isLegacyCall) {
+      const result = await pool.request()
+        .input('deviceId', sql.NVarChar, deviceIds[0])
+        .query(`SELECT TOP (1) ${SELECT_COLS} FROM dbo.PantryLogs WHERE device_id = @deviceId ORDER BY timestamp DESC`);
+      if (result.recordset.length === 0) {
+        context.res = { status: 404, headers: CORS, body: { error: "No data found" } };
         return;
       }
-
-      if (historyCount === 1 && !isMonitor) {
-        // Single record, full column set (new callers using pantryId=X)
-        results[deviceId] = result.recordset[0];
-      } else {
-        // History array
-        results[deviceId] = {
-          device_id: deviceId,
-          latest: result.recordset[0],
-          count: result.recordset.length,
-          history: result.recordset,
-        };
-      }
+      context.res = { headers: CORS, body: legacyResponse(result.recordset[0], rawId, deviceIds[0]) };
+      return;
     }
+
+    const pairs = await Promise.all(deviceIds.map(queryDevice));
+    const results = Object.fromEntries(pairs);
 
     // "all" or multi-device: return keyed object
     context.res = { headers: CORS, body: results };
