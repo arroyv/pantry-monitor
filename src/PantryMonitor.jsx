@@ -783,10 +783,101 @@ function DataExplorerTab({ analysis, nicks }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   SIMPLE / OVERVIEW VIEW
+   ═══════════════════════════════════════════════════════════════════ */
+function friendlyInsight(iss) {
+  const map = {
+    offline:      "We haven't heard from this pantry in a while — worth a check-in!",
+    stale:        "Taking a little longer to report than usual",
+    no_data:      "No recent data — might be worth a quick look",
+    battery:      "Battery is running low — a recharge would help!",
+    batt_cal:     "Battery reading looks a touch off — normal sensor quirk",
+    temp:         "Temperature is outside the typical range — interesting!",
+    humidity:     "Humidity is a bit high today",
+    iaq:          "Air quality sensor noticed something interesting",
+    eco2:         "CO₂ levels are a little elevated — good ventilation tip!",
+    rssi:         "Signal is a little weak — sensor is doing its best!",
+    scale_neg:    "One scale dipped below zero — might need a small recalibration",
+    scale_bounds: "A scale reading looks high — could be a big donation!",
+    scale_disc:   "A scale sensor went quiet — worth investigating",
+    scale_suspect:"One scale flagged itself — sensor being extra cautious",
+    flatline:     "Scale readings have been super consistent lately",
+    spike:        "Noticed a big weight change — possibly a fresh delivery!",
+    all_zero:     "All sensors read zero — device might need a restart",
+    door_stuck:   "Door has been open for a while — maybe propped open?",
+    door_freq:    "Lots of door activity — this pantry is popular today!",
+    door_unused:  "One door hasn't been used recently",
+    event_burst:  "A flurry of activity detected — busy pantry!",
+    batt_drain:   "Battery draining a bit faster than usual",
+    interval:     "Reporting timing has been a little irregular",
+    rssi_trend:   "Signal has been slowly fading — might move the sensor",
+    temp_trend:   "Temperature has been gradually shifting",
+    gas_drift:    "Air sensor is still warming up and calibrating",
+    bsec_stuck:   "Air quality sensor is still calibrating",
+    mem_drop:     "Memory usage trending up — minor technical note",
+  };
+  return map[iss.t] || iss.m;
+}
+
+const SS = {
+  ok:       { emoji:"🟢", label:"All good!",       bg:"#0d1f14", border:"#1e3d26", lc:"#3fb950" },
+  info:     { emoji:"💙", label:"Interesting!",    bg:"#0d1825", border:"#1a3050", lc:"#58a6ff" },
+  warning:  { emoji:"💛", label:"Worth a look",    bg:"#1a160a", border:"#352d12", lc:"#d29922" },
+  critical: { emoji:"🔔", label:"Needs attention", bg:"#1a160a", border:"#352d12", lc:"#e3a008" },
+};
+
+function SimplePantryCard({ id, dev, nicks }) {
+  const label = nicks[id] || id;
+  const sc = SS[dev.status] || SS.ok;
+  const latest = dev.latest;
+  const totalW = latest ? [1,2,3,4].reduce((s,i)=>s+(N(latest[`scale${i}`])||0),0) : 0;
+  const ageMin = latest ? (Date.now()-new Date(latest.timestamp).getTime())/60000 : null;
+  const recentOpens = dev.history.slice(0,48).filter(r=>toBool(r.door1_open)||toBool(r.door2_open)).length;
+  const insights = dev.issues.filter(i=>i.t!=="no_data").slice(0,2).map(friendlyInsight);
+  return (
+    <div style={{borderRadius:12,border:`1px solid ${sc.border}`,backgroundColor:sc.bg,padding:18,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
+        <div>
+          <div style={{fontSize:17,fontWeight:700,color:C.tx}}>{label}</div>
+          {label!==id && <div style={{fontSize:10,color:C.txM,marginTop:1}}>{id}</div>}
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:20}}>{sc.emoji}</div>
+          <div style={{fontSize:10,fontWeight:700,color:sc.lc,marginTop:2}}>{sc.label}</div>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:72,padding:"8px 10px",borderRadius:8,backgroundColor:`${C.card}90`,textAlign:"center"}}>
+          <div style={{fontSize:22,fontWeight:700,color:C.tx,fontFamily:"'DM Mono',monospace"}}>{totalW.toFixed(1)}</div>
+          <div style={{fontSize:10,color:C.txM,marginTop:1}}>lbs of food</div>
+        </div>
+        <div style={{flex:1,minWidth:72,padding:"8px 10px",borderRadius:8,backgroundColor:`${C.card}90`,textAlign:"center"}}>
+          <div style={{fontSize:22,fontWeight:700,color:C.tx}}>{recentOpens||"—"}</div>
+          <div style={{fontSize:10,color:C.txM,marginTop:1}}>recent opens</div>
+        </div>
+        <div style={{flex:1,minWidth:72,padding:"8px 10px",borderRadius:8,backgroundColor:`${C.card}90`,textAlign:"center"}}>
+          <div style={{fontSize:15,fontWeight:700,color:ageMin===null?C.txM:C.tx}}>{ageMin!==null?fAge(ageMin):"—"}</div>
+          <div style={{fontSize:10,color:C.txM,marginTop:1}}>last active</div>
+        </div>
+      </div>
+      {insights.length>0 ? (
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <div style={{fontSize:10,color:C.txM,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,marginBottom:2}}>✨ Insights</div>
+          {insights.map((msg,i)=><div key={i} style={{fontSize:12,color:C.txD,padding:"5px 10px",borderRadius:6,backgroundColor:`${C.card}80`,borderLeft:`2px solid ${sc.border}`}}>{msg}</div>)}
+        </div>
+      ) : (
+        <div style={{fontSize:12,color:C.ok,padding:"6px 10px",borderRadius:6,backgroundColor:C.okB}}>Everything looks great here! 🎉</div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    MAIN APP
    ═══════════════════════════════════════════════════════════════════ */
 export default function PantryMonitor() {
   const [mode, setMode] = useState(sGet("pm-mode","live"));
+  const [simpleView, setSimpleView] = useState(sGet("pm-sv",true));
   const [apiBase, setApiBase] = useState(sGet("pm-a","https://pantryapi-web-d8gzfkftgtb5cfhn.westus2-01.azurewebsites.net"));
   const [webhook, setWebhook] = useState("");
   const [T, setT] = useState(DEFS);
@@ -807,6 +898,7 @@ export default function PantryMonitor() {
     const l=sGet("pm-l",null); if(l)setLog(l);
   }, []);
   useEffect(()=>{sSet("pm-mode",mode);},[mode]);
+  useEffect(()=>{sSet("pm-sv",simpleView);},[simpleView]);
   useEffect(()=>{sSet("pm-t",T);},[T]);
   useEffect(()=>{sSet("pm-n",nicks);},[nicks]);
   useEffect(()=>{sSet("pm-a",apiBase);},[apiBase]);
@@ -897,20 +989,38 @@ export default function PantryMonitor() {
       {/* Header */}
       <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
         <div>
-          <h1 style={{ fontSize:20, fontWeight:700, color:C.tx, letterSpacing:"-0.3px" }}>Pantry Monitor</h1>
+          <h1 style={{ fontSize:20, fontWeight:700, color:C.tx, letterSpacing:"-0.3px" }}>
+            {simpleView ? "🥫 Pantry Overview" : "Pantry Monitor"}
+          </h1>
           <div style={{ fontSize:11, color:C.txM, marginTop:2 }}>
-            {mode==="demo"?"Demo":"Live"} | {Object.keys(analysis).length} pantries | {totalChecks} active findings
-            {lastR && ` | refreshed ${fAge((Date.now()-lastR.getTime())/60000)} ago`}
+            {simpleView
+              ? `${sortedDevs.length} pantries online${lastR?` · updated ${fAge((Date.now()-lastR.getTime())/60000)} ago`:""}`
+              : `${mode==="demo"?"Demo":"Live"} | ${Object.keys(analysis).length} pantries | ${totalChecks} active findings${lastR?` | refreshed ${fAge((Date.now()-lastR.getTime())/60000)} ago`:""}`
+            }
           </div>
         </div>
-        <div style={{ display:"flex", gap:5, alignItems:"center", flexWrap:"wrap" }}>
-          {critN>0&&<Tag s="critical">{critN} critical</Tag>}
-          {warnN>0&&<Tag s="warning">{warnN} warning</Tag>}
-          {critN===0&&warnN===0&&sortedDevs.length>0&&<Tag s="ok">all clear</Tag>}
+        <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+          {simpleView ? (
+            <>
+              {critN>0&&<span style={{fontSize:12,color:"#e3a008"}}>🔔 {critN} need attention</span>}
+              {critN===0&&warnN===0&&sortedDevs.length>0&&<span style={{fontSize:12,color:C.ok}}>🟢 All pantries happy</span>}
+            </>
+          ) : (
+            <>
+              {critN>0&&<Tag s="critical">{critN} critical</Tag>}
+              {warnN>0&&<Tag s="warning">{warnN} warning</Tag>}
+              {critN===0&&warnN===0&&sortedDevs.length>0&&<Tag s="ok">all clear</Tag>}
+            </>
+          )}
           <button onClick={()=>mode==="live"?fetchLive():loadDemo()} disabled={loading}
             style={{ padding:"5px 12px", borderRadius:5, border:`1px solid ${C.border}`, backgroundColor:C.card, color:C.txD, fontSize:11, cursor:"pointer", opacity:loading?0.5:1 }}>
             {loading?"...":"Refresh"}
           </button>
+          {/* View toggle */}
+          <div style={{ display:"flex", borderRadius:20, border:`1px solid ${C.border}`, backgroundColor:C.card, overflow:"hidden" }}>
+            <button onClick={()=>setSimpleView(true)} style={{ padding:"4px 12px", fontSize:11, cursor:"pointer", border:"none", backgroundColor:simpleView?C.accD:"transparent", color:simpleView?C.acc:C.txD, fontWeight:simpleView?700:400 }}>Overview</button>
+            <button onClick={()=>setSimpleView(false)} style={{ padding:"4px 12px", fontSize:11, cursor:"pointer", border:"none", backgroundColor:!simpleView?C.accD:"transparent", color:!simpleView?C.acc:C.txD, fontWeight:!simpleView?700:400 }}>Technical</button>
+          </div>
         </div>
       </div>
 
@@ -924,33 +1034,41 @@ export default function PantryMonitor() {
       {err && <div style={{ marginBottom:12, padding:10, borderRadius:6, backgroundColor:C.crB, border:`1px solid ${C.crBr}`, color:C.cr, fontSize:12 }}>{err}</div>}
 
       {/* Dashboard */}
-      {tab==="dashboard" && <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+      {tab==="dashboard" && <>
         {sortedDevs.length===0 && <div style={{ padding:40, textAlign:"center", color:C.txM }}>No pantries. {mode==="demo"?"Loading...":"Check API URL in Settings."}</div>}
-        {sortedDevs.map(id => <PantryCard key={id} id={id} latest={analysis[id].latest} history={analysis[id].history} issues={analysis[id].issues} maintSince={maint.current[id]} T={T} nicks={nicks} onNick={onNick}/>)}
-        <div style={{ marginTop:14, padding:14, borderRadius:8, backgroundColor:C.card, border:`1px solid ${C.border}` }}>
-          <div style={{ fontSize:11, fontWeight:700, color:C.txD, textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:8 }}>Check Coverage ({Object.keys(TMETA).length} thresholds across {GROUPS.length} domains)</div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))", gap:3, fontSize:11, color:C.txD }}>
-            <div><span style={{color:C.acc}}>Staleness/Offline</span> -- no data beyond expected window</div>
-            <div><span style={{color:C.acc}}>RSSI level + trend</span> -- weak signal, degradation over time</div>
-            <div><span style={{color:C.acc}}>Interval drift</span> -- reporting gap vs median cadence</div>
-            <div><span style={{color:C.acc}}>Battery level + drain</span> -- thresholds + projected days left</div>
-            <div><span style={{color:C.acc}}>Temp/Humidity range</span> -- out-of-bounds environment</div>
-            <div><span style={{color:C.acc}}>IAQ + eCO2</span> -- air quality index and estimated CO2</div>
-            <div><span style={{color:C.acc}}>Gas resistance drift</span> -- sensor aging over the week</div>
-            <div><span style={{color:C.acc}}>Temp trend</span> -- rising/falling over analysis window</div>
-            <div><span style={{color:C.acc}}>Food probe status</span> -- -127 = disconnected</div>
-            <div><span style={{color:C.acc}}>Scale bounds/disc/suspect</span> -- range, hardware, firmware flags</div>
-            <div><span style={{color:C.acc}}>Flatline detection</span> -- identical readings across any sensor</div>
-            <div><span style={{color:C.acc}}>Spike (z-score)</span> -- outliers on any numeric field</div>
-            <div><span style={{color:C.acc}}>All-zero correlation</span> -- multi-sensor zero = device fault</div>
-            <div><span style={{color:C.acc}}>Door open patterns</span> -- frequency, sustained open, unused doors</div>
-            <div><span style={{color:C.acc}}>Event rate</span> -- bursts, silence, trend shifts</div>
-            <div><span style={{color:C.acc}}>Memory trend</span> -- free memory drop (leak detection)</div>
-            <div><span style={{color:C.acc}}>BSEC calibration</span> -- accuracy stuck at 0</div>
-            <div><span style={{color:C.acc}}>Battery calibration</span> -- readings over 100%</div>
+        {simpleView ? (
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:12 }}>
+            {sortedDevs.map(id => <SimplePantryCard key={id} id={id} dev={analysis[id]} nicks={nicks}/>)}
           </div>
-        </div>
-      </div>}
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {sortedDevs.map(id => <PantryCard key={id} id={id} latest={analysis[id].latest} history={analysis[id].history} issues={analysis[id].issues} maintSince={maint.current[id]} T={T} nicks={nicks} onNick={onNick}/>)}
+            <div style={{ marginTop:14, padding:14, borderRadius:8, backgroundColor:C.card, border:`1px solid ${C.border}` }}>
+              <div style={{ fontSize:11, fontWeight:700, color:C.txD, textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:8 }}>Check Coverage ({Object.keys(TMETA).length} thresholds across {GROUPS.length} domains)</div>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))", gap:3, fontSize:11, color:C.txD }}>
+                <div><span style={{color:C.acc}}>Staleness/Offline</span> -- no data beyond expected window</div>
+                <div><span style={{color:C.acc}}>RSSI level + trend</span> -- weak signal, degradation over time</div>
+                <div><span style={{color:C.acc}}>Interval drift</span> -- reporting gap vs median cadence</div>
+                <div><span style={{color:C.acc}}>Battery level + drain</span> -- thresholds + projected days left</div>
+                <div><span style={{color:C.acc}}>Temp/Humidity range</span> -- out-of-bounds environment</div>
+                <div><span style={{color:C.acc}}>IAQ + eCO2</span> -- air quality index and estimated CO2</div>
+                <div><span style={{color:C.acc}}>Gas resistance drift</span> -- sensor aging over the week</div>
+                <div><span style={{color:C.acc}}>Temp trend</span> -- rising/falling over analysis window</div>
+                <div><span style={{color:C.acc}}>Food probe status</span> -- -127 = disconnected</div>
+                <div><span style={{color:C.acc}}>Scale bounds/disc/suspect</span> -- range, hardware, firmware flags</div>
+                <div><span style={{color:C.acc}}>Flatline detection</span> -- identical readings across any sensor</div>
+                <div><span style={{color:C.acc}}>Spike (z-score)</span> -- outliers on any numeric field</div>
+                <div><span style={{color:C.acc}}>All-zero correlation</span> -- multi-sensor zero = device fault</div>
+                <div><span style={{color:C.acc}}>Door open patterns</span> -- frequency, sustained open, unused doors</div>
+                <div><span style={{color:C.acc}}>Event rate</span> -- bursts, silence, trend shifts</div>
+                <div><span style={{color:C.acc}}>Memory trend</span> -- free memory drop (leak detection)</div>
+                <div><span style={{color:C.acc}}>BSEC calibration</span> -- accuracy stuck at 0</div>
+                <div><span style={{color:C.acc}}>Battery calibration</span> -- readings over 100%</div>
+              </div>
+            </div>
+          </div>
+        )}
+      </>}
 
       {/* Diagnostics */}
       {tab==="charts" && <DiagnosticsTab analysis={analysis} nicks={nicks} T={T}/>}
