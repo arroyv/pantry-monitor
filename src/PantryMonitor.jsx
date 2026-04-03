@@ -429,13 +429,6 @@ function diagnose(issues, history) {
       msg: "Scale flatlined AND firmware flagged suspect — likely a firmware/ADC sampling issue",
       act: "Restart device. If persists, update firmware — the HX711 driver may need a fix" };
   }
-  // Multiple scales with the same calibration offset → shared tare issue, not individual drift
-  const calOffsets = issues.filter(i => i.t === "cal_offset");
-  if (calOffsets.length >= 2 && !correlation) {
-    correlation = { type: "multi_cal_offset", cat: "software",
-      msg: `${calOffsets.length} scales showing a consistent tare offset — shared zero-point calibration likely drifted at the firmware or hardware level`,
-      act: "Re-run tare calibration for all scales simultaneously from device firmware. If offsets differ between scales, each load cell may need individual zeroing." };
-  }
 
   return { cats, actions, correlation };
 }
