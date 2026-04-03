@@ -286,6 +286,129 @@ function timeSeriesChecks(history, T) {
   return iss;
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   ROOT CAUSE ATTRIBUTION & DATA QUALITY
+   ═══════════════════════════════════════════════════════════════════ */
+const ISSUE_CLASS = {
+  // Hardware indicators
+  scale_disc:     { cat:"hardware",     act:"Check scale wiring and load cell connections" },
+  food_probe:     { cat:"hardware",     act:"Reconnect food temperature probe" },
+  flatline:       { cat:"hardware",     act:"Sensor may be stuck — check wiring or replace" },
+  spike:          { cat:"hardware",     act:"Check for loose wiring or electrical interference" },
+  battery:        { cat:"hardware",     act:"Replace or recharge battery" },
+  batt_drain:     { cat:"hardware",     act:"Battery draining fast — check for power-hungry firmware loop or replace battery" },
+  // Software / firmware indicators
+  mem_leak:       { cat:"software",     act:"Memory leak — restart device or update firmware" },
+  bsec:           { cat:"software",     act:"BSEC library still calibrating — usually resolves on its own" },
+  bsec_stuck:     { cat:"software",     act:"BSEC calibration stuck — restart device or update firmware" },
+  scale_susp:     { cat:"software",     act:"Firmware flagged suspect reading — may need recalibration" },
+  batt_cal:       { cat:"software",     act:"Battery ADC calibration off — firmware issue, not dangerous" },
+  // Environmental
+  temp:           { cat:"environment",  act:"Check pantry location — direct sunlight? Heating vent nearby?" },
+  humidity:       { cat:"environment",  act:"Check for water ingress or poor ventilation" },
+  iaq:            { cat:"environment",  act:"Poor air quality — check ventilation around pantry" },
+  eco2:           { cat:"environment",  act:"Elevated CO₂ — enclosed space with poor airflow" },
+  temp_trend:     { cat:"environment",  act:"Gradual temp shift — seasonal change or new heat source nearby?" },
+  gas_drift:      { cat:"environment",  act:"Gas resistance shifting — sensor aging or environment change" },
+  // Connectivity
+  offline:        { cat:"connectivity", act:"Device not reporting — check power and WiFi/cellular signal" },
+  stale:          { cat:"connectivity", act:"Delayed reporting — may be intermittent connectivity" },
+  rssi:           { cat:"connectivity", act:"Weak signal — move device or add antenna/repeater" },
+  rssi_trend:     { cat:"connectivity", act:"Signal degrading — check for new interference sources" },
+  interval_drift: { cat:"connectivity", act:"Irregular reporting — connectivity drops or firmware sleep issues" },
+  // Ambiguous (could be HW or SW)
+  all_zero:       { cat:"device",       act:"All sensors zero — device crash or total power loss. Restart device." },
+  scale_neg:      { cat:"device",       act:"Negative scale — could be miscalibration (SW) or a shifted load cell (HW)" },
+  scale_high:     { cat:"device",       act:"Very high scale reading — check for objects on scale or recalibrate" },
+  no_data:        { cat:"connectivity", act:"No data at all — verify device is powered on and network is reachable" },
+  // Operational (not a malfunction)
+  door:           { cat:"operational",  act:"Door is currently open — normal if someone is visiting" },
+  door_sustained: { cat:"operational",  act:"Door open a long time — may be propped for stocking" },
+  door_busy:      { cat:"operational",  act:"High door activity — popular pantry!" },
+  door_unused:    { cat:"operational",  act:"Door not used — check if door sensor is still attached" },
+  event_burst:    { cat:"operational",  act:"Event burst — could be stocking or multiple visitors" },
+  event_increase: { cat:"operational",  act:"More activity recently — growing usage is good!" },
+  event_silence:  { cat:"operational",  act:"Activity dropped off — check if door sensor is working" },
+};
+
+const CAT_META = {
+  hardware:     { icon:"🔧", label:"Hardware",      color:"#f0883e" },
+  software:     { icon:"💻", label:"Software",      color:"#a371f7" },
+  environment:  { icon:"🌡",  label:"Environmental", color:"#3fb950" },
+  connectivity: { icon:"📡", label:"Connectivity",  color:"#58a6ff" },
+  device:       { icon:"⚡", label:"Device-Level",  color:"#f85149" },
+  operational:  { icon:"🚪", label:"Operational",   color:"#d29922" },
+};
+
+function diagnose(issues, history) {
+  const cats = {};
+  const actions = [];
+
+  for (const iss of issues) {
+    const cls = ISSUE_CLASS[iss.t] || { cat: "unknown", act: iss.m };
+    if (!cats[cls.cat]) cats[cls.cat] = [];
+    cats[cls.cat].push({ ...iss, action: cls.act });
+    actions.push({ issue: iss, ...cls });
+  }
+
+  // Cross-sensor correlation: check if multiple scale disconnects happen together
+  const discCount = issues.filter(i => i.t === "scale_disc").length;
+  let correlation = null;
+  if (discCount >= 2) {
+    correlation = { type: "multi_scale_fail", cat: "device",
+      msg: `${discCount} scales disconnected simultaneously — likely a device-level wiring or power issue, not individual sensors`,
+      act: "Check the main wiring harness / I2C bus connecting all load cells" };
+  }
+  // Check for correlated zero + offline
+  const hasAllZero = issues.some(i => i.t === "all_zero");
+  const hasOffline = issues.some(i => i.t === "offline" || i.t === "stale");
+  if (hasAllZero && hasOffline && !correlation) {
+    correlation = { type: "power_failure", cat: "hardware",
+      msg: "All sensors zero AND device going offline — likely a power supply failure",
+      act: "Check battery connections, charging circuit, and solar panel (if applicable)" };
+  }
+  // Scale flatline + suspect together = firmware issue
+  const hasFlatScale = issues.some(i => i.t === "flatline" && i.m.includes("Scale"));
+  const hasSusp = issues.some(i => i.t === "scale_susp");
+  if (hasFlatScale && hasSusp && !correlation) {
+    correlation = { type: "firmware_scale", cat: "software",
+      msg: "Scale flatlined AND firmware flagged suspect — likely a firmware/ADC sampling issue",
+      act: "Restart device. If persists, update firmware — the HX711 driver may need a fix" };
+  }
+
+  return { cats, actions, correlation };
+}
+
+function dataQuality(history, T) {
+  if (!history || history.length === 0)
+    return { score: 0, freshness: 0, completeness: 0, consistency: 0, details: "No data" };
+  const sorted = [...history].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const len = sorted.length;
+
+  // Freshness: how recent is latest? 100 = just now, 0 = offline threshold
+  const ageMin = (Date.now() - new Date(sorted[len - 1].timestamp).getTime()) / 60000;
+  const freshness = Math.max(0, Math.min(100, Math.round(100 - (ageMin / (T.offlineHours * 60)) * 100)));
+
+  // Completeness: actual readings vs expected (median interval)
+  const gaps = [];
+  for (let i = 1; i < len; i++) gaps.push((new Date(sorted[i].timestamp) - new Date(sorted[i - 1].timestamp)) / 60000);
+  const medInterval = gaps.length > 0 ? [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length / 2)] : 10;
+  const spanMin = (new Date(sorted[len - 1].timestamp) - new Date(sorted[0].timestamp)) / 60000;
+  const expected = Math.max(1, spanMin / Math.max(medInterval, 1));
+  const completeness = Math.min(100, Math.round((len / expected) * 100));
+
+  // Consistency: % of readings where key fields are non-null
+  const keyFields = ["air_temp", "air_humid", "scale1", "scale2", "scale3", "scale4", "batt_percent", "rssi"];
+  let valid = 0;
+  for (const r of sorted) {
+    if (keyFields.every(f => N(r[f]) !== null)) valid++;
+  }
+  const consistency = Math.round((valid / len) * 100);
+
+  const score = Math.round(freshness * 0.4 + completeness * 0.3 + consistency * 0.3);
+  return { score, freshness, completeness, consistency };
+}
+
 function fAge(m) {
   if (m < 1) return "just now"; if (m < 60) return `${Math.round(m)}m`;
   const h = m / 60; if (h < 24) return `${Math.floor(h)}h ${Math.round(m%60)}m`;
@@ -388,7 +511,7 @@ const Metric = ({ label, value, unit, w }) => (
 /* ═══════════════════════════════════════════════════════════════════
    PANTRY CARD
    ═══════════════════════════════════════════════════════════════════ */
-function PantryCard({ id, latest, history, issues, maintSince, T, nicks, onNick }) {
+function PantryCard({ id, latest, history, issues, maintSince, T, nicks, onNick, dq, diag }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [nameIn, setNameIn] = useState("");
@@ -422,6 +545,7 @@ function PantryCard({ id, latest, history, issues, maintSince, T, nicks, onNick 
         <div style={{ display:"flex", gap:5, flexWrap:"wrap", justifyContent:"flex-end" }}>
           <Tag s={status}>{status}</Tag>
           {issues.length > 0 && <Tag s={status === "ok" ? "info" : status}>{issues.length} checks</Tag>}
+          {dq && <span style={{fontSize:10,fontWeight:700,color:dq.score>=70?C.ok:dq.score>=40?C.wr:C.cr,fontFamily:"'DM Mono',monospace",padding:"1px 6px",borderRadius:3,backgroundColor:dq.score>=70?C.okB:dq.score>=40?C.wrB:C.crB}}>Q{dq.score}</span>}
           {maintSince && <Tag s="critical">attn {fAge((Date.now()-new Date(maintSince).getTime())/60000)}</Tag>}
         </div>
         <span style={{ color:C.txM, fontSize:14, transition:"transform 0.2s", transform:open?"rotate(180deg)":"none", marginLeft:4 }}>&#9662;</span>
@@ -487,6 +611,25 @@ function PantryCard({ id, latest, history, issues, maintSince, T, nicks, onNick 
                   </div>)}
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Root cause attribution */}
+          {diag && issues.length > 0 && (
+            <div style={{marginTop:8,padding:10,borderRadius:6,backgroundColor:C.bg,border:`1px solid ${C.border}`}}>
+              <div style={{fontSize:10,fontWeight:700,color:C.acc,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>🔍 Root Cause</div>
+              {diag.correlation && (
+                <div style={{fontSize:12,color:C.tx,marginBottom:6,padding:"4px 8px",borderRadius:4,backgroundColor:`${CAT_META[diag.correlation.cat]?.color||C.acc}10`,borderLeft:`3px solid ${CAT_META[diag.correlation.cat]?.color||C.acc}`}}>
+                  <div>{diag.correlation.msg}</div>
+                  <div style={{fontSize:11,color:C.txD,marginTop:2}}>→ {diag.correlation.act}</div>
+                </div>
+              )}
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {Object.entries(diag.cats).map(([cat,iss])=>{
+                  const m=CAT_META[cat]||{icon:"❓",label:cat,color:C.txD};
+                  return <span key={cat} style={{fontSize:10,padding:"2px 8px",borderRadius:3,color:m.color,backgroundColor:`${m.color}15`,border:`1px solid ${m.color}30`}}>{m.icon} {m.label} ({iss.length})</span>;
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -691,6 +834,65 @@ function DiagnosticsTab({ analysis, nicks, T }) {
         {dev && <span style={{fontSize:11,color:C.txM}}>{dev.history.length} readings · {dev.issues.length} findings</span>}
       </div>
       {dev && <>
+        {/* ── Device Diagnostics ── */}
+        {panel("🔍 Device Diagnostics", <>
+          {/* Data quality gauge */}
+          <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+            {[
+              {l:"Overall",   v:dev.dq.score,        clr:dev.dq.score>=70?C.ok:dev.dq.score>=40?C.wr:C.cr},
+              {l:"Freshness", v:dev.dq.freshness,    clr:dev.dq.freshness>=70?C.ok:dev.dq.freshness>=40?C.wr:C.cr},
+              {l:"Completeness",v:dev.dq.completeness,clr:dev.dq.completeness>=70?C.ok:dev.dq.completeness>=40?C.wr:C.cr},
+              {l:"Consistency",v:dev.dq.consistency,  clr:dev.dq.consistency>=70?C.ok:dev.dq.consistency>=40?C.wr:C.cr},
+            ].map(g=>(
+              <div key={g.l} style={{flex:1,minWidth:80,padding:"8px 10px",borderRadius:6,backgroundColor:C.bg,border:`1px solid ${C.border}`,textAlign:"center"}}>
+                <div style={{fontSize:10,color:C.txM,textTransform:"uppercase",marginBottom:3}}>{g.l}</div>
+                <div style={{fontSize:20,fontWeight:700,color:g.clr,fontFamily:"'DM Mono',monospace"}}>{g.v}</div>
+                <div style={{fontSize:9,color:C.txM}}>/ 100</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Cross-sensor correlation */}
+          {dev.diag.correlation && (
+            <div style={{padding:10,borderRadius:6,marginBottom:12,backgroundColor:`${CAT_META[dev.diag.correlation.cat]?.color||C.acc}10`,border:`1px solid ${CAT_META[dev.diag.correlation.cat]?.color||C.acc}30`}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",color:CAT_META[dev.diag.correlation.cat]?.color||C.acc,marginBottom:4}}>
+                ⚡ Cross-Sensor Correlation
+              </div>
+              <div style={{fontSize:12,color:C.tx,marginBottom:4}}>{dev.diag.correlation.msg}</div>
+              <div style={{fontSize:11,color:C.txD}}>→ {dev.diag.correlation.act}</div>
+            </div>
+          )}
+
+          {/* Root cause breakdown by category */}
+          {Object.keys(dev.diag.cats).length > 0 ? (
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {Object.entries(dev.diag.cats).map(([cat, issues]) => {
+                const meta = CAT_META[cat] || {icon:"❓",label:cat,color:C.txD};
+                return (
+                  <div key={cat}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                      <span>{meta.icon}</span>
+                      <span style={{fontSize:11,fontWeight:700,color:meta.color,textTransform:"uppercase",letterSpacing:"0.4px"}}>{meta.label}</span>
+                      <span style={{fontSize:10,color:C.txM}}>({issues.length})</span>
+                    </div>
+                    {issues.map((iss,i) => (
+                      <div key={i} style={{padding:"6px 10px",marginBottom:3,borderRadius:4,fontSize:12,backgroundColor:C.bg,border:`1px solid ${C.border}`,borderLeft:`3px solid ${meta.color}`}}>
+                        <div style={{color:SC[iss.s],fontWeight:600,marginBottom:2}}>
+                          <span style={{fontSize:10,textTransform:"uppercase",opacity:0.7,marginRight:6}}>{iss.s}</span>{iss.m}
+                        </div>
+                        <div style={{fontSize:11,color:C.txD}}>→ {iss.action}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{fontSize:12,color:C.ok,padding:10}}>No issues detected — all systems healthy ✓</div>
+          )}
+        </>)}
+
+        {/* ── Charts ── */}
         {sdIssues.length > 0 && (
           <div style={{padding:10,borderRadius:8,backgroundColor:C.card,border:`1px solid ${C.crBr}`}}>
             <div style={{fontSize:10,color:C.cr,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:700,marginBottom:6}}>⚖ Scale & Door Findings</div>
@@ -941,7 +1143,9 @@ export default function PantryMonitor() {
       const pt = latest ? pointChecks(latest, T) : [{s:"critical",t:"no_data",m:"No data",g:"Connectivity"}];
       const ts = timeSeriesChecks(hist, T);
       const all = [...pt,...ts];
-      res[dev] = { latest, history:sorted, issues:all, status:getSev(all) };
+      const diag = diagnose(all, sorted);
+      const dq = dataQuality(sorted, T);
+      res[dev] = { latest, history:sorted, issues:all, status:getSev(all), diag, dq };
     }
     return res;
   },[pH,T]);
@@ -1048,7 +1252,7 @@ export default function PantryMonitor() {
           </div>
         ) : (
           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-            {sortedDevs.map(id => <PantryCard key={id} id={id} latest={analysis[id].latest} history={analysis[id].history} issues={analysis[id].issues} maintSince={maint.current[id]} T={T} nicks={nicks} onNick={onNick}/>)}
+            {sortedDevs.map(id => <PantryCard key={id} id={id} latest={analysis[id].latest} history={analysis[id].history} issues={analysis[id].issues} maintSince={maint.current[id]} T={T} nicks={nicks} onNick={onNick} dq={analysis[id].dq} diag={analysis[id].diag}/>)}
             <div style={{ marginTop:14, padding:14, borderRadius:8, backgroundColor:C.card, border:`1px solid ${C.border}` }}>
               <div style={{ fontSize:11, fontWeight:700, color:C.txD, textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:8 }}>Check Coverage ({Object.keys(TMETA).length} thresholds across {GROUPS.length} domains)</div>
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))", gap:3, fontSize:11, color:C.txD }}>
