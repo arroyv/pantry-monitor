@@ -704,29 +704,104 @@ function AnomalyLog({ log, nicks }) {
 /* ═══════════════════════════════════════════════════════════════════
    SVG CHART HELPERS
    ═══════════════════════════════════════════════════════════════════ */
-function MiniLine({ data, getVal, color, W, H, mn, mx }) {
-  const range = mx - mn || 1;
-  const toX = i => (i / Math.max(data.length - 1, 1)) * W;
-  const toY = v => (H - 4) - (H - 8) * ((v - mn) / range);
-  let d = "", gap = true;
-  data.forEach((item, i) => {
-    const v = getVal(item);
-    if (v === null) { gap = true; return; }
-    d += `${gap ? "M" : "L"}${toX(i).toFixed(1)},${toY(v).toFixed(1)} `;
-    gap = false;
-  });
-  return d ? <path d={d.trim()} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" strokeLinejoin="round"/> : null;
+
+// Build time axis label positions (midnight boundaries as %)
+function timeAxisLabels(data) {
+  if (!data || data.length < 2) return [];
+  const t0 = new Date(data[0].timestamp).getTime();
+  const t1 = new Date(data[data.length - 1].timestamp).getTime();
+  const span = Math.max(t1 - t0, 1);
+  const labels = [];
+  const d = new Date(t0); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 1);
+  while (d.getTime() <= t1) {
+    const pct = ((d.getTime() - t0) / span) * 100;
+    if (pct > 4 && pct < 96)
+      labels.push({ pct, label: d.toLocaleDateString(undefined, { month:"short", day:"numeric" }) });
+    d.setDate(d.getDate() + 1);
+  }
+  return labels;
 }
 
+// Wrapper: Y-axis labels left, SVG center, time axis below
+function ChartFrame({ children, H, yLabels, timeData, note, legend }) {
+  const tLabels = timeAxisLabels(timeData);
+  const t0str = timeData?.[0]?.timestamp
+    ? new Date(timeData[0].timestamp).toLocaleDateString(undefined, { month:"short", day:"numeric" }) : "";
+  return (
+    <div>
+      {legend && <div style={{display:"flex",gap:12,marginBottom:6,fontSize:10,flexWrap:"wrap"}}>{legend}</div>}
+      <div style={{display:"flex",gap:0}}>
+        {/* Y-axis labels */}
+        <div style={{width:30,flexShrink:0,display:"flex",flexDirection:"column",justifyContent:"space-between",paddingBottom:0,paddingTop:2}}>
+          {yLabels.map((l,i) => <span key={i} style={{fontSize:8,color:C.txM,textAlign:"right",paddingRight:4,lineHeight:1}}>{l}</span>)}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <svg viewBox={`0 0 500 ${H}`} style={{width:"100%",height:H,display:"block"}} preserveAspectRatio="none">
+            {children}
+          </svg>
+          {/* Time axis */}
+          <div style={{position:"relative",height:14,marginTop:1}}>
+            <span style={{position:"absolute",left:0,fontSize:8,color:C.txM,transform:"translateX(-50%)"}}>{t0str}</span>
+            {tLabels.map((l,i) => (
+              <span key={i} style={{position:"absolute",left:`${l.pct}%`,transform:"translateX(-50%)",fontSize:8,color:C.txM,whiteSpace:"nowrap"}}>{l.label}</span>
+            ))}
+            <span style={{position:"absolute",right:0,fontSize:8,color:C.txM}}>now</span>
+          </div>
+          {note && <div style={{fontSize:9,color:C.txM,marginTop:2,textAlign:"right"}}>{note}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Timestamp-based path builder
+function tsPath(data, getVal, W, H, t0, t1, mn, mx) {
+  const spanT = Math.max(t1 - t0, 1);
+  const rangeV = mx - mn || 1;
+  const toX = r => ((new Date(r.timestamp).getTime() - t0) / spanT) * W;
+  const toY = v => (H - 2) - (H - 4) * ((v - mn) / rangeV);
+  let d = "", gap = true;
+  for (const r of data) {
+    const v = getVal(r);
+    if (v === null) { gap = true; continue; }
+    d += `${gap ? "M" : "L"}${toX(r).toFixed(1)},${toY(v).toFixed(1)} `;
+    gap = false;
+  }
+  return d.trim();
+}
+
+// Horizontal grid line
+function GridLine({ y, W, H }) {
+  return <line x1="0" y1={y} x2={W} y2={y} stroke={`${C.border}`} strokeWidth="0.5" opacity="0.7"/>;
+}
+
+// Threshold reference line with label
 function RefLine({ y, color, W, label }) {
   return <>
-    <line x1="0" y1={y} x2={W} y2={y} stroke={color} strokeWidth="0.5" strokeDasharray="3,2" opacity="0.6"/>
-    {label && <text x={W - 2} y={y - 2} textAnchor="end" fontSize="7" fill={color} opacity="0.8">{label}</text>}
+    <line x1="0" y1={y} x2={W} y2={y} stroke={color} strokeWidth="0.5" strokeDasharray="3,2" opacity="0.7"/>
+    {label && <text x={W - 2} y={y - 2} textAnchor="end" fontSize="7" fill={color} opacity="0.85" vectorEffect="non-scaling-stroke">{label}</text>}
   </>;
+}
+
+// Vertical day-boundary lines inside SVG
+function DayLines({ data, W, H }) {
+  if (!data || data.length < 2) return null;
+  const t0 = new Date(data[0].timestamp).getTime();
+  const t1 = new Date(data[data.length - 1].timestamp).getTime();
+  const span = Math.max(t1 - t0, 1);
+  const lines = [];
+  const d = new Date(t0); d.setHours(0,0,0,0); d.setDate(d.getDate()+1);
+  while (d.getTime() <= t1) {
+    const x = ((d.getTime() - t0) / span) * W;
+    lines.push(<line key={d.getTime()} x1={x} y1="0" x2={x} y2={H} stroke={C.border} strokeWidth="0.5" opacity="0.5"/>);
+    d.setDate(d.getDate()+1);
+  }
+  return <>{lines}</>;
 }
 
 const SCALE_COLORS = [C.acc, C.ok, C.wr, "#a371f7"];
 
+/* ── Scale Chart ── */
 function ScaleChart({ history, T }) {
   const data = [...history].reverse();
   if (data.length < 2) return <div style={{color:C.txM,fontSize:11,padding:20,textAlign:"center"}}>Not enough data</div>;
@@ -734,76 +809,122 @@ function ScaleChart({ history, T }) {
   if (!allVals.length) return null;
   const mn = Math.min(0, Math.min(...allVals));
   const mx = Math.max(T.scaleMax * 1.1, Math.max(...allVals) * 1.05);
-  const W = 500, H = 90;
-  const toY = v => (H - 4) - (H - 8) * ((v - mn) / (mx - mn || 1));
+  const totals = data.map(d => [1,2,3,4].reduce((s,i) => s + (N(d[`scale${i}`])||0), 0));
+  const maxTotal = Math.max(...totals);
+  const W = 500, H = 100;
+  const t0 = new Date(data[0].timestamp).getTime();
+  const t1 = new Date(data[data.length-1].timestamp).getTime();
+  const toY = v => (H - 2) - (H - 4) * ((v - mn) / (mx - mn || 1));
+  const mid = (mn + mx) / 2;
   return (
-    <div>
-      <div style={{display:"flex",gap:12,marginBottom:6,fontSize:10,flexWrap:"wrap"}}>
-        {[1,2,3,4].map(i => <span key={i} style={{color:SCALE_COLORS[i-1]}}>● S{i}</span>)}
-        <span style={{marginLeft:"auto",color:C.txM}}>{data.length} readings</span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:H}} preserveAspectRatio="none">
-        <RefLine y={toY(T.scaleMax)} color={C.wr} W={W} label={`max ${T.scaleMax}`}/>
-        {mn < 0 && <RefLine y={toY(0)} color={C.border} W={W}/>}
-        {[1,2,3,4].map(i => <MiniLine key={i} data={data} getVal={d=>N(d[`scale${i}`])} color={SCALE_COLORS[i-1]} W={W} H={H} mn={mn} mx={mx}/>)}
-      </svg>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:C.txM,marginTop:2}}>
-        <span>7 days ago</span><span>now</span>
-      </div>
-    </div>
+    <ChartFrame H={H} yLabels={[`${mx.toFixed(0)}`, `${mid.toFixed(0)}`, `${mn.toFixed(0)}`]} timeData={data}
+      note={`${data.length} readings`}
+      legend={<>
+        {[1,2,3,4].map(i=><span key={i} style={{color:SCALE_COLORS[i-1]}}>● S{i}</span>)}
+        <span style={{color:"#fff",fontWeight:700}}>● Total</span>
+        <span style={{marginLeft:"auto",color:C.txM}}>lbs</span>
+      </>}>
+      <DayLines data={data} W={W} H={H}/>
+      <GridLine y={toY(mid)} W={W} H={H}/>
+      <RefLine y={toY(T.scaleMax)} color={C.wr} W={W} label={`max ${T.scaleMax} lbs`}/>
+      {mn < 0 && <RefLine y={toY(0)} color={C.txM} W={W}/>}
+      {/* Individual scales */}
+      {[1,2,3,4].map(i => {
+        const d = tsPath(data, r => N(r[`scale${i}`]), W, H, t0, t1, mn, mx);
+        return d ? <path key={i} d={d} fill="none" stroke={SCALE_COLORS[i-1]} strokeWidth="1" vectorEffect="non-scaling-stroke" strokeLinejoin="round" opacity="0.75"/> : null;
+      })}
+      {/* Total weight — bold white */}
+      {(() => {
+        const d = tsPath(data, r => [1,2,3,4].reduce((s,i)=>s+(N(r[`scale${i}`])||0),0), W, H, t0, t1, mn, mx);
+        return d ? <path d={d} fill="none" stroke="#ffffff" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" opacity="0.9"/> : null;
+      })()}
+      {/* Current value dot + label */}
+      {(() => {
+        const last = data[data.length-1];
+        const tot = totals[totals.length-1];
+        const x = W, y = toY(tot);
+        return <circle cx={x} cy={y} r="3" fill="#fff" vectorEffect="non-scaling-stroke"/>;
+      })()}
+    </ChartFrame>
   );
 }
 
+/* ── Door Timeline ── */
 function DoorTimeline({ history }) {
   const data = [...history].reverse();
-  const W = 500, H = 44;
-  const toX = i => (i / Math.max(data.length - 1, 1)) * W;
-  const eventCount = data.filter(d => toBool(d.door1_open) || toBool(d.door2_open)).length;
+  if (data.length < 2) return <div style={{color:C.txM,fontSize:11,padding:20,textAlign:"center"}}>Not enough data</div>;
+  const W = 500, ROW = 22, GAP = 4, H = ROW * 2 + GAP;
+  const t0 = new Date(data[0].timestamp).getTime();
+  const t1 = new Date(data[data.length - 1].timestamp).getTime();
+  const span = Math.max(t1 - t0, 1);
+  const toX = ts => ((new Date(ts).getTime() - t0) / span) * W;
+
+  // Build open-duration runs per door
+  function getRuns(doorKey) {
+    const runs = [];
+    let start = null;
+    for (const r of data) {
+      if (toBool(r[doorKey])) {
+        if (start === null) start = new Date(r.timestamp).getTime();
+      } else {
+        if (start !== null) { runs.push({ start, end: new Date(r.timestamp).getTime() }); start = null; }
+      }
+    }
+    if (start !== null) runs.push({ start, end: t1 });
+    return runs;
+  }
+
+  const runs1 = getRuns("door1_open"), runs2 = getRuns("door2_open");
+  const count1 = data.filter(r => toBool(r.door1_open)).length;
+  const count2 = data.filter(r => toBool(r.door2_open)).length;
+  const y1 = 0, y2 = ROW + GAP;
+
   return (
-    <div>
-      <div style={{display:"flex",gap:12,marginBottom:6,fontSize:10}}>
-        <span style={{color:C.acc}}>● Door 1</span>
-        <span style={{color:C.ok}}>● Door 2</span>
-        <span style={{color:C.wr}}>● Both</span>
-        <span style={{marginLeft:"auto",color:C.txM}}>{eventCount} open events</span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:H}} preserveAspectRatio="none">
-        <rect x="0" y="1" width={W} height={H/2-2} fill={`${C.border}30`} rx="1"/>
-        <rect x="0" y={H/2+1} width={W} height={H/2-2} fill={`${C.border}30`} rx="1"/>
-        {data.map((d, i) => {
-          const d1 = toBool(d.door1_open), d2 = toBool(d.door2_open);
-          if (!d1 && !d2) return null;
-          const x = toX(i).toFixed(1);
-          const clr = d1 && d2 ? C.wr : d1 ? C.acc : C.ok;
-          return <g key={i}>
-            {d1 && <line x1={x} y1="3" x2={x} y2={H/2-3} stroke={clr} strokeWidth="1.5" opacity="0.8" vectorEffect="non-scaling-stroke"/>}
-            {d2 && <line x1={x} y1={H/2+3} x2={x} y2={H-3} stroke={clr} strokeWidth="1.5" opacity="0.8" vectorEffect="non-scaling-stroke"/>}
-          </g>;
-        })}
-      </svg>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:C.txM,marginTop:2}}>
-        <span>7 days ago</span><span>now</span>
-      </div>
-    </div>
+    <ChartFrame H={H} yLabels={["D1","","D2"]} timeData={data}
+      note={`Door 1: ${count1} opens · Door 2: ${count2} opens`}>
+      <DayLines data={data} W={W} H={H}/>
+      {/* Door row backgrounds */}
+      <rect x="0" y={y1} width={W} height={ROW} fill={`${C.border}40`} rx="2"/>
+      <rect x="0" y={y2} width={W} height={ROW} fill={`${C.border}40`} rx="2"/>
+      {/* Door 1 runs */}
+      {runs1.map((r, i) => {
+        const x1 = toX(r.start), x2 = toX(r.end);
+        const w = Math.max(x2 - x1, 1.5);
+        return <rect key={i} x={x1.toFixed(1)} y={y1+2} width={w.toFixed(1)} height={ROW-4} fill={C.acc} rx="1" opacity="0.85" vectorEffect="non-scaling-stroke"/>;
+      })}
+      {/* Door 2 runs */}
+      {runs2.map((r, i) => {
+        const x1 = toX(r.start), x2 = toX(r.end);
+        const w = Math.max(x2 - x1, 1.5);
+        return <rect key={i} x={x1.toFixed(1)} y={y2+2} width={w.toFixed(1)} height={ROW-4} fill={C.ok} rx="1" opacity="0.85" vectorEffect="non-scaling-stroke"/>;
+      })}
+    </ChartFrame>
   );
 }
 
+/* ── Battery Chart ── */
 function BatteryChart({ history, T }) {
   const data = [...history].reverse();
-  const W = 500, H = 60;
-  const mn = 0, mx = 105;
-  const toY = v => (H - 4) - (H - 8) * ((v - mn) / (mx - mn));
+  if (data.length < 2) return <div style={{color:C.txM,fontSize:11,padding:20,textAlign:"center"}}>Not enough data</div>;
+  const W = 500, H = 70;
+  const mn = 0, mx = 100;
+  const t0 = new Date(data[0].timestamp).getTime();
+  const t1 = new Date(data[data.length - 1].timestamp).getTime();
+  const toY = v => (H - 2) - (H - 4) * ((v - mn) / (mx - mn));
+  const latestB = N(data[data.length-1]?.batt_percent);
+  const lineColor = latestB !== null && latestB <= T.battCritical ? C.cr : latestB !== null && latestB <= T.battLow ? C.wr : C.ok;
+  const pathD = tsPath(data, r => N(r.batt_percent), W, H, t0, t1, mn, mx);
   return (
-    <div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:H}} preserveAspectRatio="none">
-        <RefLine y={toY(T.battLow)} color={C.wr} W={W} label={`warn ${T.battLow}%`}/>
-        <RefLine y={toY(T.battCritical)} color={C.cr} W={W} label={`crit ${T.battCritical}%`}/>
-        <MiniLine data={data} getVal={d=>N(d.batt_percent)} color={C.ok} W={W} H={H} mn={mn} mx={mx}/>
-      </svg>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:C.txM,marginTop:2}}>
-        <span>7 days ago</span><span>now</span>
-      </div>
-    </div>
+    <ChartFrame H={H} yLabels={["100%","50%","0%"]} timeData={data}
+      note={latestB !== null ? `Current: ${latestB}%` : ""}>
+      <DayLines data={data} W={W} H={H}/>
+      <GridLine y={toY(50)} W={W} H={H}/>
+      <RefLine y={toY(T.battLow)} color={C.wr} W={W} label={`warn ${T.battLow}%`}/>
+      <RefLine y={toY(T.battCritical)} color={C.cr} W={W} label={`crit ${T.battCritical}%`}/>
+      {pathD && <path d={pathD} fill="none" stroke={lineColor} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round"/>}
+      {/* Current value dot */}
+      {latestB !== null && <circle cx={W} cy={toY(latestB)} r="3" fill={lineColor} vectorEffect="non-scaling-stroke"/>}
+    </ChartFrame>
   );
 }
 
