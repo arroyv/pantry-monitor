@@ -13,7 +13,7 @@ const DEFS = {
   staleMinutes: 60, offlineHours: 24,
   battLow: 20, battCritical: 10,
   tempMin: -5, tempMax: 40, humidityMax: 95,
-  scaleMin: -2, scaleMax: 50,
+  scaleMin: -2, scaleMax: 50, calOffsetMin: -0.5, calOffsetSpread: 0.5,
   flatlineWindow: 6, spikeZ: 3.0, intervalDriftX: 3, rollingN: 30,
   iaqWarn: 150, iaqCrit: 250, eco2Warn: 1000, eco2Crit: 2000,
   rssiWarn: -85, rssiCrit: -90,
@@ -39,6 +39,8 @@ const TMETA = {
   eco2Crit:           { l: "eCO2 critical (ppm)",   g: "Environment",  d: "Estimated CO2 critical" },
   scaleMin:           { l: "Scale min (lbs)",       g: "Scales",       d: "Below = miscalibrated" },
   scaleMax:           { l: "Scale max (lbs)",       g: "Scales",       d: "Above = suspicious" },
+  calOffsetMin:       { l: "Cal offset floor (lbs)",g: "Scales",       d: "Flag if stable floor is below this (negative = tare drift)" },
+  calOffsetSpread:    { l: "Cal offset spread (lbs)",g:"Scales",       d: "Max IQR of stable floor to call it consistent" },
   doorSustainedMin:   { l: "Door open alert (min)", g: "Doors",        d: "Alert if open this long" },
   doorDailyHigh:      { l: "Door opens/day high",   g: "Doors",        d: "Unusual door activity" },
   eventBurstPerHour:  { l: "Event burst (/hr)",     g: "Events",       d: "Too many events per hour" },
@@ -295,6 +297,45 @@ function timeSeriesChecks(history, T) {
     }
   }
 
+  // ── Scale calibration / tare offset ──
+  // A scale that has drifted zero-point will sit at a consistent negative floor even when
+  // "empty". We identify this by collecting readings where the scale didn't change much
+  // from the previous reading (quiescent / at-rest periods), then checking whether the
+  // bottom of that distribution is reproducibly negative. A tight, negative floor =
+  // tare drift. A wide spread = noise, not flagged.
+  for (let i = 1; i <= 4; i++) {
+    // Only use readings that are not disconnected / suspect
+    const scaleVals = sorted
+      .filter(r => !toBool(r[`scale${i}_disconnect`]) && !toBool(r[`scale${i}_suspect`]))
+      .map(r => N(r[`scale${i}`]))
+      .filter(v => v !== null);
+    if (scaleVals.length < 20) continue;
+
+    // Collect values from quiescent windows (change < 0.3 lbs from previous reading)
+    const stableVals = [];
+    for (let j = 1; j < scaleVals.length; j++) {
+      if (Math.abs(scaleVals[j] - scaleVals[j - 1]) < 0.3) stableVals.push(scaleVals[j]);
+    }
+    if (stableVals.length < 10) continue;
+
+    // Percentile helpers over stable readings
+    const sf = [...stableVals].sort((a, b) => a - b);
+    const p10 = sf[Math.floor(sf.length * 0.10)];
+    const p25 = sf[Math.floor(sf.length * 0.25)];
+    const spread = p25 - p10; // IQR of the lower tail
+
+    const thresh = T.calOffsetMin ?? -0.5;
+    const spreadMax = T.calOffsetSpread ?? 0.5;
+
+    if (p10 < thresh && spread < spreadMax) {
+      iss.push({
+        s: "warning", t: "cal_offset",
+        m: `Scale ${i} tare offset ~${p10.toFixed(2)} lbs (floor consistent within ${spread.toFixed(2)} lbs across ${stableVals.length} at-rest readings) — recalibrate zero/tare`,
+        g: "Scales",
+      });
+    }
+  }
+
   return iss;
 }
 
@@ -315,6 +356,7 @@ const ISSUE_CLASS = {
   bsec_stuck:     { cat:"software",     act:"BSEC calibration stuck — restart device or update firmware" },
   scale_susp:     { cat:"software",     act:"Firmware flagged suspect reading — may need recalibration" },
   batt_cal:       { cat:"software",     act:"Battery ADC calibration off — firmware issue, not dangerous" },
+  cal_offset:     { cat:"software",     act:"Scale zero-point has drifted — run tare/zero recalibration in device firmware" },
   // Environmental
   temp:           { cat:"environment",  act:"Check pantry location — direct sunlight? Heating vent nearby?" },
   humidity:       { cat:"environment",  act:"Check for water ingress or poor ventilation" },
@@ -386,6 +428,13 @@ function diagnose(issues, history) {
     correlation = { type: "firmware_scale", cat: "software",
       msg: "Scale flatlined AND firmware flagged suspect — likely a firmware/ADC sampling issue",
       act: "Restart device. If persists, update firmware — the HX711 driver may need a fix" };
+  }
+  // Multiple scales with the same calibration offset → shared tare issue, not individual drift
+  const calOffsets = issues.filter(i => i.t === "cal_offset");
+  if (calOffsets.length >= 2 && !correlation) {
+    correlation = { type: "multi_cal_offset", cat: "software",
+      msg: `${calOffsets.length} scales showing a consistent tare offset — shared zero-point calibration likely drifted at the firmware or hardware level`,
+      act: "Re-run tare calibration for all scales simultaneously from device firmware. If offsets differ between scales, each load cell may need individual zeroing." };
   }
 
   return { cats, actions, correlation };
