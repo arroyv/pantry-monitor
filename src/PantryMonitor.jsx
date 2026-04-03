@@ -570,7 +570,7 @@ function PantryCard({ id, latest, history, issues, maintSince, T, nicks, onNick,
             <Metric label="Weight" value={totalW.toFixed(1)} unit="lbs"/>
             <Metric label="Temp" value={N(latest.air_temp)?.toFixed(1)||"--"} unit="C" w={N(latest.air_temp)<T.tempMin||N(latest.air_temp)>T.tempMax?"warning":null}/>
             <Metric label="Humidity" value={N(latest.air_humid)?.toFixed(0)||"--"} unit="%" w={N(latest.air_humid)>T.humidityMax?"warning":null}/>
-            <Metric label="Battery" value={latest.batt_percent} unit="%" w={N(latest.batt_percent)<=T.battCritical?"critical":N(latest.batt_percent)<=T.battLow?"warning":null}/>
+            <Metric label="Battery" value={latest.batt_percent??'--'} unit="%" w={N(latest.batt_percent)!==null&&N(latest.batt_percent)<=T.battCritical?"critical":N(latest.batt_percent)!==null&&N(latest.batt_percent)<=T.battLow?"warning":null}/>
             <Metric label="RSSI" value={latest.rssi} unit="dBm" w={N(latest.rssi)<T.rssiCrit?"critical":N(latest.rssi)<T.rssiWarn?"warning":null}/>
             {iaq > 0 && <Metric label="IAQ" value={iaq} unit="" w={iaq>=T.iaqCrit?"critical":iaq>=T.iaqWarn?"warning":null}/>}
             {eco2 > 0 && <Metric label="eCO2" value={eco2} unit="ppm" w={eco2>=T.eco2Crit?"critical":eco2>=T.eco2Warn?"warning":null}/>}
@@ -936,8 +936,9 @@ function DiagnosticsTab({ analysis, nicks, T }) {
   const firstWithData = devs.find(id => (analysis[id]?.history?.length ?? 0) > 1) || devs[0] || "";
   const [sel, setSel] = useState(firstWithData);
   useEffect(() => {
-    if (!sel && devs.length) setSel(devs.find(id => (analysis[id]?.history?.length ?? 0) > 1) || devs[0]);
-  }, [devs]);
+    if ((!sel || !analysis[sel]) && devs.length)
+      setSel(devs.find(id => (analysis[id]?.history?.length ?? 0) > 1) || devs[0]);
+  }, [devs, analysis, sel]);
   const dev = analysis[sel];
   const sdIssues = dev?.issues.filter(i => i.g === "Scales" || i.g === "Doors") || [];
   const otherIssues = dev?.issues.filter(i => i.g !== "Scales" && i.g !== "Doors") || [];
@@ -1044,8 +1045,12 @@ function DiagnosticsTab({ analysis, nicks, T }) {
    ═══════════════════════════════════════════════════════════════════ */
 function DataExplorerTab({ analysis, nicks }) {
   const devs = Object.keys(analysis);
-  const [sel, setSel] = useState(devs[0] || "");
-  useEffect(() => { if (!sel && devs.length) setSel(devs[0]); }, [devs]);
+  const firstWithData = devs.find(id => (analysis[id]?.history?.length ?? 0) > 0) || devs[0] || "";
+  const [sel, setSel] = useState(firstWithData);
+  useEffect(() => {
+    if ((!sel || !analysis[sel]) && devs.length)
+      setSel(devs.find(id => (analysis[id]?.history?.length ?? 0) > 0) || devs[0]);
+  }, [devs, analysis, sel]);
   const rows = analysis[sel]?.history || [];
   const TH = ({ children, right }) => (
     <th style={{padding:"6px 8px",textAlign:right?"right":"left",color:C.txM,fontWeight:600,borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,backgroundColor:C.card,fontSize:10,whiteSpace:"nowrap"}}>{children}</th>
@@ -1095,7 +1100,7 @@ function DataExplorerTab({ analysis, nicks }) {
                     <TD right color={d2?C.wr:C.txM}>{d2?"OPEN":"–"}</TD>
                     <TD mono right>{N(r.air_temp)?.toFixed(1)??"--"}</TD>
                     <TD mono right>{N(r.air_humid)?.toFixed(0)??"--"}</TD>
-                    <TD mono right color={b<=10?C.cr:b<=20?C.wr:C.tx}>{b??"--"}</TD>
+                    <TD mono right color={b!==null&&b<=10?C.cr:b!==null&&b<=20?C.wr:C.tx}>{b??"--"}</TD>
                     <TD mono right color={rssi<-90?C.cr:rssi<-85?C.wr:C.tx}>{rssi??"--"}</TD>
                   </tr>;
                 })}
