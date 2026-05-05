@@ -1219,48 +1219,64 @@ const SS = {
   critical: { emoji:"🔔", label:"Needs attention", bg:"#1a160a", border:"#352d12", lc:"#e3a008" },
 };
 
-function SimplePantryCard({ id, dev, nicks }) {
+function MaintenanceCard({ id, dev, nicks, T }) {
   const label = nicks[id] || id;
-  const sc = SS[dev.status] || SS.ok;
   const latest = dev.latest;
-  const totalW = latest ? [1,2,3,4].reduce((s,i)=>s+(N(latest[`scale${i}`])||0),0) : 0;
-  const ageMin = latest ? (Date.now()-new Date(latest.timestamp).getTime())/60000 : null;
-  const recentOpens = dev.history.slice(0,48).filter(r=>toBool(r.door1_open)||toBool(r.door2_open)).length;
-  const insights = dev.issues.filter(i=>i.t!=="no_data").slice(0,2).map(friendlyInsight);
+  const ageMin = latest ? (Date.now() - new Date(latest.timestamp).getTime()) / 60000 : null;
+  const batt = latest ? N(latest.batt_percent) : null;
+  const battValid = batt !== null && batt > 0 && batt <= 100;
+
+  // Connectivity status only — separate from all the sensor diagnostics
+  let connLabel, connColor, connBorder;
+  if (ageMin === null || ageMin > (T.offlineHours || 24) * 60) {
+    connLabel = "OFFLINE"; connColor = C.cr; connBorder = C.crBr;
+  } else if (ageMin > (T.staleMinutes || 60)) {
+    connLabel = "STALE";   connColor = C.wr; connBorder = C.wrBr;
+  } else {
+    connLabel = "ONLINE";  connColor = C.ok; connBorder = C.okBr;
+  }
+  const dotSev = connLabel === "ONLINE" ? "ok" : connLabel === "STALE" ? "warning" : "critical";
+  const battColor = !battValid ? C.txM
+    : batt <= (T.battCritical || 10) ? C.cr
+    : batt <= (T.battLow || 20)      ? C.wr
+    : C.ok;
+
   return (
-    <div style={{borderRadius:12,border:`1px solid ${sc.border}`,backgroundColor:sc.bg,padding:18,display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
-        <div>
-          <div style={{fontSize:17,fontWeight:700,color:C.tx}}>{label}</div>
-          {label!==id && <div style={{fontSize:10,color:C.txM,marginTop:1}}>{id}</div>}
-        </div>
-        <div style={{textAlign:"right"}}>
-          <div style={{fontSize:20}}>{sc.emoji}</div>
-          <div style={{fontSize:10,fontWeight:700,color:sc.lc,marginTop:2}}>{sc.label}</div>
+    <div style={{borderRadius:14, border:`1.5px solid ${connBorder}`, backgroundColor:C.card, padding:20, display:"flex", flexDirection:"column", gap:16}}>
+      {/* Name + status badge */}
+      <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", gap:8}}>
+        <div style={{fontSize:19, fontWeight:700, color:C.tx, lineHeight:1.2}}>{label}</div>
+        <div style={{display:"flex", alignItems:"center", gap:7, flexShrink:0}}>
+          <Dot s={dotSev} sz={11}/>
+          <span style={{fontSize:13, fontWeight:700, color:connColor, letterSpacing:"0.8px"}}>{connLabel}</span>
         </div>
       </div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <div style={{flex:1,minWidth:72,padding:"8px 10px",borderRadius:8,backgroundColor:`${C.card}90`,textAlign:"center"}}>
-          <div style={{fontSize:22,fontWeight:700,color:C.tx,fontFamily:"'DM Mono',monospace"}}>{totalW.toFixed(1)}</div>
-          <div style={{fontSize:10,color:C.txM,marginTop:1}}>lbs of food</div>
+
+      {/* Last seen */}
+      <div>
+        <div style={{fontSize:10, color:C.txM, textTransform:"uppercase", letterSpacing:"0.6px", marginBottom:5}}>Last seen</div>
+        <div style={{fontSize:26, fontWeight:700, color:ageMin === null ? C.txM : connColor, fontFamily:"'DM Mono',monospace", lineHeight:1}}>
+          {ageMin === null ? "Never" : fAge(ageMin)}
         </div>
-        <div style={{flex:1,minWidth:72,padding:"8px 10px",borderRadius:8,backgroundColor:`${C.card}90`,textAlign:"center"}}>
-          <div style={{fontSize:22,fontWeight:700,color:C.tx}}>{recentOpens||"—"}</div>
-          <div style={{fontSize:10,color:C.txM,marginTop:1}}>recent opens</div>
+        {latest?.timestamp && (
+          <div style={{fontSize:11, color:C.txM, marginTop:5}}>
+            {new Date(latest.timestamp).toLocaleString(undefined, {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"})}
+          </div>
+        )}
+      </div>
+
+      {/* Battery */}
+      <div>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:7}}>
+          <div style={{fontSize:10, color:C.txM, textTransform:"uppercase", letterSpacing:"0.6px"}}>Battery</div>
+          <div style={{fontSize:16, fontWeight:700, color:battColor, fontFamily:"'DM Mono',monospace"}}>
+            {battValid ? `${Math.round(batt)}%` : "—"}
+          </div>
         </div>
-        <div style={{flex:1,minWidth:72,padding:"8px 10px",borderRadius:8,backgroundColor:`${C.card}90`,textAlign:"center"}}>
-          <div style={{fontSize:15,fontWeight:700,color:ageMin===null?C.txM:C.tx}}>{ageMin!==null?fAge(ageMin):"—"}</div>
-          <div style={{fontSize:10,color:C.txM,marginTop:1}}>last active</div>
+        <div style={{height:9, borderRadius:5, backgroundColor:C.border, overflow:"hidden"}}>
+          {battValid && <div style={{height:"100%", width:`${Math.min(batt, 100)}%`, backgroundColor:battColor, borderRadius:5}}/>}
         </div>
       </div>
-      {insights.length>0 ? (
-        <div style={{display:"flex",flexDirection:"column",gap:4}}>
-          <div style={{fontSize:10,color:C.txM,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,marginBottom:2}}>✨ Insights</div>
-          {insights.map((msg,i)=><div key={i} style={{fontSize:12,color:C.txD,padding:"5px 10px",borderRadius:6,backgroundColor:`${C.card}80`,borderLeft:`2px solid ${sc.border}`}}>{msg}</div>)}
-        </div>
-      ) : (
-        <div style={{fontSize:12,color:C.ok,padding:"6px 10px",borderRadius:6,backgroundColor:C.okB}}>Everything looks great here! 🎉</div>
-      )}
     </div>
   );
 }
@@ -1283,6 +1299,7 @@ export default function PantryMonitor() {
   const [tab, setTab] = useState("dashboard");
   const maint = useRef({});
   const seen = useRef(new Set());
+  const alertFired = useRef(sGet("pm-af", {}));
 
   useEffect(() => {
     const t=sGet("pm-t",null); if(t)setT(t);
@@ -1352,6 +1369,84 @@ export default function PantryMonitor() {
     }
   },[analysis,webhook]);
 
+  // Targeted alerts: battery low/critical and 24h+ offline.
+  // Each condition fires the webhook once per device per 24 h, then backs off until
+  // the condition clears (so a recovering device resets the debounce).
+  useEffect(() => {
+    if (!webhook || !Object.keys(analysis).length) return;
+    const now = Date.now();
+    const fired = { ...alertFired.current };
+    const alerts = [];
+    for (const [dev, devData] of Object.entries(analysis)) {
+      const label = nicks[dev] || dev;
+      const latest = devData.latest;
+      const batt = latest ? N(latest.batt_percent) : null;
+      const battValid = batt !== null && batt > 0 && batt <= 100;
+      if (battValid) {
+        for (const [cond, thresh, sev] of [
+          ["batt_critical", T.battCritical, "critical"],
+          ["batt_low",      T.battLow,      "warning"],
+        ]) {
+          const key = `${dev}:${cond}`;
+          if (batt <= thresh) {
+            const last = fired[key] ? new Date(fired[key]).getTime() : 0;
+            if (now - last > 86400000) {
+              fired[key] = new Date().toISOString();
+              alerts.push({ type: cond, severity: sev, device: dev, label,
+                battery: Math.round(batt),
+                message: `${label}: battery at ${Math.round(batt)}%` });
+            }
+          } else {
+            delete fired[key]; // Cleared — reset so it fires again if it drops back
+          }
+        }
+      }
+      const ageMin = latest ? (now - new Date(latest.timestamp).getTime()) / 60000 : Infinity;
+      const offKey = `${dev}:offline_24h`;
+      if (ageMin > 1440) {
+        const last = fired[offKey] ? new Date(fired[offKey]).getTime() : 0;
+        if (now - last > 86400000) {
+          fired[offKey] = new Date().toISOString();
+          alerts.push({ type: "offline_24h", severity: "critical", device: dev, label,
+            lastSeen: latest?.timestamp || null,
+            offlineHours: Math.round(ageMin / 60),
+            message: `${label} has been offline for ${Math.round(ageMin / 60)} hours` });
+        }
+      } else {
+        delete fired[offKey];
+      }
+    }
+    alertFired.current = fired;
+    sSet("pm-af", fired);
+    if (alerts.length > 0)
+      fetch(webhook, { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ type:"alert", timestamp: new Date().toISOString(), alerts }),
+        mode:"no-cors" }).catch(() => {});
+  }, [analysis, webhook, nicks, T]);
+
+  const sendDigest = useCallback(() => {
+    if (!webhook) return;
+    const now = Date.now();
+    const pantries = Object.entries(analysis).map(([dev, d]) => {
+      const label = nicks[dev] || dev;
+      const latest = d.latest;
+      const ageMin = latest ? (now - new Date(latest.timestamp).getTime()) / 60000 : null;
+      const batt = latest ? N(latest.batt_percent) : null;
+      return { device: dev, label, status: d.status,
+        lastSeen: latest?.timestamp || null,
+        lastSeenAgo: ageMin !== null ? fAge(ageMin) : "never",
+        batteryPct: batt !== null && batt > 0 && batt <= 100 ? Math.round(batt) : null,
+        issueCount: d.issues.length };
+    });
+    const online = pantries.filter(p => { const d = analysis[p.device]; const l = d.latest;
+      return l && (now - new Date(l.timestamp).getTime()) / 60000 <= (T.staleMinutes || 60); }).length;
+    fetch(webhook, { method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ type:"status_digest", timestamp: new Date().toISOString(),
+        summary: { total: pantries.length, online, offline: pantries.length - online },
+        pantries }),
+      mode:"no-cors" }).catch(() => {});
+  }, [analysis, webhook, nicks, T]);
+
   const sortedDevs = useMemo(()=>{
     const ord={critical:0,warning:1,info:2,ok:3};
     const sdScore = dev => {
@@ -1389,9 +1484,12 @@ export default function PantryMonitor() {
             {simpleView ? "🥫 Pantry Overview" : "Pantry Monitor"}
           </h1>
           <div style={{ fontSize:11, color:C.txM, marginTop:2 }}>
-            {simpleView
-              ? `${sortedDevs.length} pantries online${lastR?` · updated ${fAge((Date.now()-lastR.getTime())/60000)} ago`:""}`
-              : `${mode==="demo"?"Demo":"Live"} | ${Object.keys(analysis).length} pantries | ${totalChecks} active findings${lastR?` | refreshed ${fAge((Date.now()-lastR.getTime())/60000)} ago`:""}`
+            {simpleView ? (() => {
+              const offN = sortedDevs.filter(id => { const l = analysis[id].latest;
+                return !l || (Date.now()-new Date(l.timestamp).getTime())/60000 > (T.offlineHours||24)*60; }).length;
+              return `${sortedDevs.length} pantries · ${offN > 0 ? `${offN} offline` : "all reporting"}${lastR ? ` · ${fAge((Date.now()-lastR.getTime())/60000)} ago` : ""}`;
+            })()
+            : `${mode==="demo"?"Demo":"Live"} | ${Object.keys(analysis).length} pantries | ${totalChecks} active findings${lastR?` | refreshed ${fAge((Date.now()-lastR.getTime())/60000)} ago`:""}`
             }
           </div>
         </div>
@@ -1434,7 +1532,7 @@ export default function PantryMonitor() {
         {sortedDevs.length===0 && <div style={{ padding:40, textAlign:"center", color:C.txM }}>No pantries. {mode==="demo"?"Loading...":"Check API URL in Settings."}</div>}
         {simpleView ? (
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:12 }}>
-            {sortedDevs.map(id => <SimplePantryCard key={id} id={id} dev={analysis[id]} nicks={nicks}/>)}
+            {sortedDevs.map(id => <MaintenanceCard key={id} id={id} dev={analysis[id]} nicks={nicks} T={T}/>)}
           </div>
         ) : (
           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
@@ -1490,16 +1588,22 @@ export default function PantryMonitor() {
                 style={{ width:"100%", padding:"7px 10px", borderRadius:5, border:`1px solid ${C.borderL}`, backgroundColor:C.bg, color:C.tx, fontSize:12, fontFamily:"'DM Mono',monospace" }}/>
             </div>
             <div style={{ flex:"1 1 280px" }}>
-              <label style={{ fontSize:11, color:C.txM, display:"block", marginBottom:3 }}>Google Sheets Webhook</label>
-              <input value={webhook} onChange={e=>setWebhook(e.target.value)} placeholder="https://script.google.com/macros/s/.../exec"
+              <label style={{ fontSize:11, color:C.txM, display:"block", marginBottom:3 }}>Alert Webhook URL</label>
+              <input value={webhook} onChange={e=>setWebhook(e.target.value)} placeholder="https://hooks.zapier.com/hooks/catch/..."
                 style={{ width:"100%", padding:"7px 10px", borderRadius:5, border:`1px solid ${C.borderL}`, backgroundColor:C.bg, color:C.tx, fontSize:12, fontFamily:"'DM Mono',monospace" }}/>
+              <div style={{ fontSize:10, color:C.txM, marginTop:4, lineHeight:1.5 }}>
+                Fires on: battery ≤ {T.battLow}% (warning), ≤ {T.battCritical}% (critical), offline &gt; 24 h. Once per condition per 24 h.
+                Point this at Zapier, Make, or Power Automate to send email.
+              </div>
             </div>
           </div>
-          <div style={{ display:"flex", gap:6 }}>
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
             <button onClick={()=>{setMode("live");setTab("dashboard");}} disabled={!apiBase}
               style={{ padding:"6px 14px", borderRadius:5, fontSize:12, cursor:apiBase?"pointer":"not-allowed", border:`1px solid ${mode==="live"?C.ok:C.border}`, backgroundColor:mode==="live"?C.okB:"transparent", color:mode==="live"?C.ok:C.txD, opacity:apiBase?1:0.4 }}>Go Live</button>
             <button onClick={()=>{setMode("demo");setTab("dashboard");}}
               style={{ padding:"6px 14px", borderRadius:5, fontSize:12, cursor:"pointer", border:`1px solid ${mode==="demo"?C.acc:C.border}`, backgroundColor:mode==="demo"?C.accD:"transparent", color:mode==="demo"?C.acc:C.txD }}>Demo Mode</button>
+            <button onClick={sendDigest} disabled={!webhook || !Object.keys(analysis).length}
+              style={{ padding:"6px 14px", borderRadius:5, fontSize:12, cursor:webhook?"pointer":"not-allowed", border:`1px solid ${C.border}`, backgroundColor:"transparent", color:C.txD, opacity:webhook?1:0.4 }}>Send Status Digest</button>
           </div>
         </div>
         <div style={{ padding:14, borderRadius:8, backgroundColor:C.card, border:`1px solid ${C.border}` }}>
