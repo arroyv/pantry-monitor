@@ -1289,6 +1289,7 @@ export default function PantryMonitor() {
   const [simpleView, setSimpleView] = useState(sGet("pm-sv",true));
   const [apiBase, setApiBase] = useState(sGet("pm-a","https://pantryapi-web-d8gzfkftgtb5cfhn.westus2-01.azurewebsites.net"));
   const [webhook, setWebhook] = useState("");
+  const [ntfy, setNtfy] = useState("");
   const [T, setT] = useState(DEFS);
   const [nicks, setNicks] = useState({});
   const [pH, setPH] = useState({});
@@ -1305,6 +1306,7 @@ export default function PantryMonitor() {
     const t=sGet("pm-t",null); if(t)setT(t);
     const n=sGet("pm-n",null); if(n)setNicks(n);
     const w=sGet("pm-w",null); if(w)setWebhook(w);
+    const nf=sGet("pm-nf",null); if(nf)setNtfy(nf);
     const l=sGet("pm-l",null); if(l)setLog(l);
   }, []);
   useEffect(()=>{sSet("pm-mode",mode);},[mode]);
@@ -1313,6 +1315,7 @@ export default function PantryMonitor() {
   useEffect(()=>{sSet("pm-n",nicks);},[nicks]);
   useEffect(()=>{sSet("pm-a",apiBase);},[apiBase]);
   useEffect(()=>{sSet("pm-w",webhook);},[webhook]);
+  useEffect(()=>{sSet("pm-nf",ntfy);},[ntfy]);
   useEffect(()=>{if(log.length>0)sSet("pm-l",log.slice(0,1000));},[log]);
 
   const onNick = useCallback((id,name)=>setNicks(p=>({...p,[id]:name||id})),[]);
@@ -1373,7 +1376,7 @@ export default function PantryMonitor() {
   // Each condition fires the webhook once per device per 24 h, then backs off until
   // the condition clears (so a recovering device resets the debounce).
   useEffect(() => {
-    if (!webhook || !Object.keys(analysis).length) return;
+    if ((!webhook && !ntfy) || !Object.keys(analysis).length) return;
     const now = Date.now();
     const fired = { ...alertFired.current };
     const alerts = [];
@@ -1418,14 +1421,23 @@ export default function PantryMonitor() {
     }
     alertFired.current = fired;
     sSet("pm-af", fired);
-    if (alerts.length > 0)
-      fetch(webhook, { method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ type:"alert", timestamp: new Date().toISOString(), alerts }),
-        mode:"no-cors" }).catch(() => {});
-  }, [analysis, webhook, nicks, T]);
+    if (alerts.length > 0) {
+      const hasCrit = alerts.some(a => a.severity === "critical");
+      if (webhook)
+        fetch(webhook, { method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ type:"alert", timestamp: new Date().toISOString(), alerts }),
+          mode:"no-cors" }).catch(() => {});
+      if (ntfy)
+        fetch(ntfy, { method:"POST",
+          headers:{ "Title":"Pantry Alert", "Priority": hasCrit ? "urgent" : "default",
+            "Tags": hasCrit ? "rotating_light" : "warning", "Content-Type":"text/plain" },
+          body: alerts.map(a => a.message).join("\n"),
+          mode:"no-cors" }).catch(() => {});
+    }
+  }, [analysis, webhook, ntfy, nicks, T]);
 
   const sendDigest = useCallback(() => {
-    if (!webhook) return;
+    if (!webhook && !ntfy) return;
     const now = Date.now();
     const pantries = Object.entries(analysis).map(([dev, d]) => {
       const label = nicks[dev] || dev;
@@ -1440,12 +1452,25 @@ export default function PantryMonitor() {
     });
     const online = pantries.filter(p => { const d = analysis[p.device]; const l = d.latest;
       return l && (now - new Date(l.timestamp).getTime()) / 60000 <= (T.staleMinutes || 60); }).length;
-    fetch(webhook, { method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ type:"status_digest", timestamp: new Date().toISOString(),
-        summary: { total: pantries.length, online, offline: pantries.length - online },
-        pantries }),
-      mode:"no-cors" }).catch(() => {});
-  }, [analysis, webhook, nicks, T]);
+    if (webhook)
+      fetch(webhook, { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ type:"status_digest", timestamp: new Date().toISOString(),
+          summary: { total: pantries.length, online, offline: pantries.length - online },
+          pantries }),
+        mode:"no-cors" }).catch(() => {});
+    if (ntfy) {
+      const lines = pantries.map(p => {
+        const bStr = p.batteryPct !== null ? ` · 🔋${p.batteryPct}%` : "";
+        const dot = p.status === "ok" ? "🟢" : p.status === "warning" ? "🟡" : "🔴";
+        return `${dot} ${p.label}: ${p.lastSeenAgo}${bStr}`;
+      });
+      fetch(ntfy, { method:"POST",
+        headers:{ "Title":`Pantry Status · ${online}/${pantries.length} online`,
+          "Priority":"low", "Tags":"package", "Content-Type":"text/plain" },
+        body: lines.join("\n"),
+        mode:"no-cors" }).catch(() => {});
+    }
+  }, [analysis, webhook, ntfy, nicks, T]);
 
   const sortedDevs = useMemo(()=>{
     const ord={critical:0,warning:1,info:2,ok:3};
@@ -1588,12 +1613,20 @@ export default function PantryMonitor() {
                 style={{ width:"100%", padding:"7px 10px", borderRadius:5, border:`1px solid ${C.borderL}`, backgroundColor:C.bg, color:C.tx, fontSize:12, fontFamily:"'DM Mono',monospace" }}/>
             </div>
             <div style={{ flex:"1 1 280px" }}>
-              <label style={{ fontSize:11, color:C.txM, display:"block", marginBottom:3 }}>Alert Webhook URL</label>
+              <label style={{ fontSize:11, color:C.txM, display:"block", marginBottom:3 }}>ntfy.sh Topic URL <span style={{color:C.txM, fontWeight:400}}>(push notifications)</span></label>
+              <input value={ntfy} onChange={e=>setNtfy(e.target.value)} placeholder="https://ntfy.sh/your-topic-name"
+                style={{ width:"100%", padding:"7px 10px", borderRadius:5, border:`1px solid ${C.borderL}`, backgroundColor:C.bg, color:C.tx, fontSize:12, fontFamily:"'DM Mono',monospace" }}/>
+              <div style={{ fontSize:10, color:C.txM, marginTop:4, lineHeight:1.5 }}>
+                Free forever. Install the ntfy app → subscribe to your topic name → done.
+                Alerts arrive as phone push notifications.
+              </div>
+            </div>
+            <div style={{ flex:"1 1 280px" }}>
+              <label style={{ fontSize:11, color:C.txM, display:"block", marginBottom:3 }}>Email Webhook URL <span style={{color:C.txM, fontWeight:400}}>(Zapier / Make / Apps Script)</span></label>
               <input value={webhook} onChange={e=>setWebhook(e.target.value)} placeholder="https://hooks.zapier.com/hooks/catch/..."
                 style={{ width:"100%", padding:"7px 10px", borderRadius:5, border:`1px solid ${C.borderL}`, backgroundColor:C.bg, color:C.tx, fontSize:12, fontFamily:"'DM Mono',monospace" }}/>
               <div style={{ fontSize:10, color:C.txM, marginTop:4, lineHeight:1.5 }}>
-                Fires on: battery ≤ {T.battLow}% (warning), ≤ {T.battCritical}% (critical), offline &gt; 24 h. Once per condition per 24 h.
-                Point this at Zapier, Make, or Power Automate to send email.
+                Receives JSON. Point at Zapier / Make / Power Automate to forward to email or a listserv.
               </div>
             </div>
           </div>
