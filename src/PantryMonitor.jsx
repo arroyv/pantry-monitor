@@ -1372,7 +1372,7 @@ export default function PantryMonitor() {
           </button>
           {/* Subscribe to notifications */}
           <button onClick={()=>setSubscribed(true)} style={{ padding:"5px 12px", borderRadius:5, border:`1px soli d ${C.border}`, backgroundColor:C.card, color:C.txD, fontSize:11, cursor:"pointer", fontWeight:600, }}>
-            {subscribed?"Unsubscribe":"Subscribe"}
+            Subscribe
           </button>
           {/* View toggle */}
           <div style={{ display:"flex", borderRadius:20, border:`1px solid ${C.border}`, backgroundColor:C.card, overflow:"hidden" }}>
