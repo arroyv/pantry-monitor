@@ -1371,7 +1371,7 @@ export default function PantryMonitor() {
             {loading?"...":"Refresh"}
           </button>
           {/* Subscribe to notifications */}
-          <button onClick={()=>setSubscribed(true)} style={{ padding:"5px 12px", borderRadius:5, border:`1px soli d ${C.border}`, backgroundColor:C.card, color:C.txD, fontSize:11, cursor:"pointer", fontWeight:600, }}>
+          <button onClick={()=>setSubscribed(true)} style={{ padding:"5px 12px", borderRadius:5, border:`1px solid ${C.border}`, backgroundColor:C.card, color:C.txD, fontSize:11, cursor:"pointer" }}>
             Subscribe
           </button>
           {/* View toggle */}
