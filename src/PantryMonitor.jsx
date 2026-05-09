@@ -1370,6 +1370,10 @@ export default function PantryMonitor() {
             style={{ padding:"5px 12px", borderRadius:5, border:`1px solid ${C.border}`, backgroundColor:C.card, color:C.txD, fontSize:11, cursor:"pointer", opacity:loading?0.5:1 }}>
             {loading?"...":"Refresh"}
           </button>
+          {/* Subscribe to notifications */}
+          <button onClick={()=>setSubscribed(true)} style={{ padding:"5px 12px", borderRadius:5, border:`1px soli d ${C.border}`, backgroundColor:C.card, color:C.txD, fontSize:11, cursor:"pointer", fontWeight:600, }}>
+            {subscribed?"Unsubscribe":"Subscribe"}
+          </button>
           {/* View toggle */}
           <div style={{ display:"flex", borderRadius:20, border:`1px solid ${C.border}`, backgroundColor:C.card, overflow:"hidden" }}>
             <button onClick={()=>setSimpleView(true)} style={{ padding:"4px 12px", fontSize:11, cursor:"pointer", border:"none", backgroundColor:simpleView?C.accD:"transparent", color:simpleView?C.acc:C.txD, fontWeight:simpleView?700:400 }}>Overview</button>
