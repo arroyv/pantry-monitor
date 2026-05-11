@@ -57,6 +57,40 @@ const SELECT_COLS = `
   scale1_suspect, scale2_suspect, scale3_suspect, scale4_suspect
 `;
 
+const PANTRY_TOPICS = {
+    HallerLakePantry: "pantry-monitor-HallerLake",
+    StPaulChurchPantry: "pantry-monitor-StPaulChurch",
+    GreenWood: "pantry-monitor-GreenWood",
+    BeaconHill: "pantry-monitor-BeaconHill"
+};
+
+// Sends a push notifications to the ntfy topics via ntfy.sh 
+async function sendNotifications(pantryId, message) {
+    const topic = PANTRY_TOPICS[pantryId];
+
+    if (!topic) {
+      console.warn('No topic found for pantry:', pantryId);
+      return;
+    }
+
+    try {
+      const res = await fetch(`https://ntfy.sh/${topic}`, {
+        method: "POST",
+        headers: {
+          "Title": "Pantry Alert",
+          "Priority": "high"
+        },
+        body: message
+      });
+
+      if (!res.ok) {
+        console.error(`${res.status}: Failed to send notification for ${pantryId} - ${res.statusText}`);
+      }
+    }catch (err) {
+      console.error(`Error sending notification for ${pantryId}:`, err);
+    }
+  }
+
 // Build the ORIGINAL response shape so existing callers don't break
 function legacyResponse(row, pantryId, internalDeviceId) {
   const totalWeight = (row.scale1 || 0) + (row.scale2 || 0)
@@ -182,6 +216,18 @@ module.exports = async function (context, req) {
 
     const pairs = await Promise.all(deviceIds.map(queryDevice));
     const results = Object.fromEntries(pairs);
+
+    for (const [deviceId, data] of Object.entries(results)) {
+      const latest = data.latest || data;
+
+      if (!latest || !latest.timestamp) {
+        continue;
+      }
+
+      if (latest.batt_percent != null && latest.batt_percent > 20) { // change this threshold!
+        await sendNtfyAlert(context, deviceId, `${deviceId} battery is low: ${latest.batt_percent}%.`);
+      }
+    }
 
     // "all" or multi-device: return keyed object
     context.res = { headers: CORS, body: results };
