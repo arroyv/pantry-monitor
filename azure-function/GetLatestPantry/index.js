@@ -218,6 +218,7 @@ module.exports = async function (context, req) {
     const results = Object.fromEntries(pairs);
 
     for (const [deviceId, data] of Object.entries(results)) {
+      console.log("Sending test notification for device:", deviceId);
       await sendNotifications(deviceId, 'Test notification from GetLatestPantry function');
       // const latest = data.latest || data;
 
