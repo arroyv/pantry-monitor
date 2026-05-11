@@ -218,15 +218,16 @@ module.exports = async function (context, req) {
     const results = Object.fromEntries(pairs);
 
     for (const [deviceId, data] of Object.entries(results)) {
-      const latest = data.latest || data;
+      await sendNtfyAlert(context, deviceId, 'Test notification from GetLatestPantry function');
+      // const latest = data.latest || data;
 
-      if (!latest || !latest.timestamp) {
-        continue;
-      }
+      // if (!latest || !latest.timestamp) {
+      //   continue;
+      // }
 
-      if (latest.batt_percent != null && latest.batt_percent > 20) { // change this threshold!
-        await sendNtfyAlert(context, deviceId, `${deviceId} battery is low: ${latest.batt_percent}%.`);
-      }
+      // if (latest.batt_percent != null && latest.batt_percent > 20) { // change this threshold!
+      //   await sendNtfyAlert(context, deviceId, `${deviceId} battery is low: ${latest.batt_percent}%.`);
+      // }
     }
 
     // "all" or multi-device: return keyed object
