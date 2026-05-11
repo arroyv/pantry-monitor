@@ -1383,7 +1383,7 @@ export default function PantryMonitor() {
           <button onClick={()=>setSubscribeModal(true)} style={{ padding:"5px 12px", borderRadius:5, border:`1px solid ${C.border}`, backgroundColor:C.card, color:C.txD, fontSize:11, cursor:"pointer" }}>
             Subscribe
           </button>
-          {showSubscribeModal && (
+          {subscribeModal && (
             <div
               style={{
                 position:"absolute",
@@ -1431,7 +1431,7 @@ export default function PantryMonitor() {
 
               <div style={{display:"flex",justifyContent:"flex-end",gap:6,marginTop:10}}>
                 <button
-                  onClick={() => setShowSubscribeModal(false)}
+                  onClick={() => setSubscribeModal(false)}
                   style={{
                     padding:"5px 10px",
                     borderRadius:5,
@@ -1452,7 +1452,7 @@ export default function PantryMonitor() {
                     );
 
                     console.log("Selected pantries:", pantryIds);
-                    setShowSubscribeModal(false);
+                    setSubscribeModal(false);
                   }}
                   style={{
                     padding:"5px 10px",
