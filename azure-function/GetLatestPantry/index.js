@@ -58,10 +58,10 @@ const SELECT_COLS = `
 `;
 
 const PANTRY_TOPICS = {
-    HallerLakePantry: "pantry-monitor-HallerLake",
-    StPaulChurchPantry: "pantry-monitor-StPaulChurch",
-    GreenWood: "pantry-monitor-Greenwood",
-    BeaconHill: "pantry-monitor-Beaconhill"
+    "HallerLakePantry": "pantry-monitor-HallerLake",
+    "StPaulChurchPantry": "pantry-monitor-StPaulChurch",
+    "GreenWood": "pantry-monitor-Greenwood",
+    "BeaconHill": "pantry-monitor-Beaconhill"
 };
 
 // Sends a push notifications to the ntfy topics via ntfy.sh 
@@ -76,10 +76,7 @@ async function sendNotifications(pantryId, message) {
     try {
       const res = await fetch(`https://ntfy.sh/${topic}`, {
         method: "POST",
-        headers: {
-          "Title": "Pantry Alert",
-          "Priority": "high"
-        },
+        headers: CORS,
         body: message
       });
 
