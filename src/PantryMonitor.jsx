@@ -1404,7 +1404,7 @@ export default function PantryMonitor() {
                 </div>
 
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {sortedDevs.map(([id]) => {
+                  {sortedDevs.map((id) => {
                     const label = nicks[id] || id;
                     const selected = !!selectedPantries[id];
 
