@@ -60,8 +60,8 @@ const SELECT_COLS = `
 const PANTRY_TOPICS = {
     HallerLakePantry: "pantry-monitor-HallerLake",
     StPaulChurchPantry: "pantry-monitor-StPaulChurch",
-    GreenWood: "pantry-monitor-GreenWood",
-    BeaconHill: "pantry-monitor-BeaconHill"
+    GreenWood: "pantry-monitor-Greenwood",
+    BeaconHill: "pantry-monitor-Beaconhill"
 };
 
 // Sends a push notifications to the ntfy topics via ntfy.sh 
@@ -218,7 +218,7 @@ module.exports = async function (context, req) {
     const results = Object.fromEntries(pairs);
 
     for (const [deviceId, data] of Object.entries(results)) {
-      await sendNtfyAlert(context, deviceId, 'Test notification from GetLatestPantry function');
+      await sendNotifications(deviceId, 'Test notification from GetLatestPantry function');
       // const latest = data.latest || data;
 
       // if (!latest || !latest.timestamp) {
