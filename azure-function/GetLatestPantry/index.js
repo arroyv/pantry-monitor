@@ -197,6 +197,20 @@ module.exports = async function (context, req) {
       }];
     };
 
+    for (const [deviceId, data] of Object.entries(results)) {
+      context.log("Sending test notification for device:", deviceId);
+      await sendNotifications(deviceId, 'Test notification from GetLatestPantry function');
+      // const latest = data.latest || data;
+
+      // if (!latest || !latest.timestamp) {
+      //   continue;
+      // }
+
+      // if (latest.batt_percent != null && latest.batt_percent > 20) { // change this threshold!
+      //   await sendNtfyAlert(context, deviceId, `${deviceId} battery is low: ${latest.batt_percent}%.`);
+      // }
+    }
+
     // Legacy single-device path returns early (unchanged behavior)
     if (isLegacyCall) {
       const result = await pool.request()
@@ -212,20 +226,6 @@ module.exports = async function (context, req) {
 
     const pairs = await Promise.all(deviceIds.map(queryDevice));
     const results = Object.fromEntries(pairs);
-
-    for (const [deviceId, data] of Object.entries(results)) {
-      console.log("Sending test notification for device:", deviceId);
-      await sendNotifications(deviceId, 'Test notification from GetLatestPantry function');
-      // const latest = data.latest || data;
-
-      // if (!latest || !latest.timestamp) {
-      //   continue;
-      // }
-
-      // if (latest.batt_percent != null && latest.batt_percent > 20) { // change this threshold!
-      //   await sendNtfyAlert(context, deviceId, `${deviceId} battery is low: ${latest.batt_percent}%.`);
-      // }
-    }
 
     // "all" or multi-device: return keyed object
     context.res = { headers: CORS, body: results };
