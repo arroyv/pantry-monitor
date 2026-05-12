@@ -24,15 +24,15 @@
 //
 // ═══════════════════════════════════════════════════════════════════
 
-const sql = require('mssql');
+const sql = require("mssql");
 
 // Aliases: friendly IDs → internal device_id in DB
 const ALIASES = {
-  "4015": "BeaconHill",
-  "beaconhill": "BeaconHill",
-  "greenwood": "Greenwood",
-  "stpaul": "StPaulChurchPantry",
-  "stpaulchurchpantry": "StPaulChurchPantry",
+  4015: "BeaconHill",
+  beaconhill: "BeaconHill",
+  greenwood: "Greenwood",
+  stpaul: "StPaulChurchPantry",
+  stpaulchurchpantry: "StPaulChurchPantry",
 };
 
 const CORS = {
@@ -57,20 +57,57 @@ const SELECT_COLS = `
   scale1_suspect, scale2_suspect, scale3_suspect, scale4_suspect
 `;
 
+const PANTRY_TOPICS = {
+  HallerLakePantry: "pantry-monitor-HallerLake",
+  StPaulChurchPantry: "pantry-monitor-StPaulChurch",
+  Greenwood: "pantry-monitor-GreenWood",
+  BeaconHill: "pantry-monitor-BeaconHill",
+};
+
+// Sends push notifications to ntfy topics via ntfy.sh
+async function sendNotifications(context, pantryId, message) {
+  const topic = PANTRY_TOPICS[pantryId];
+
+  if (!topic) {
+    context.log.warn("No topic found for pantry:", pantryId);
+    return;
+  }
+
+  try {
+    const res = await fetch(`https://ntfy.sh/${topic}`, {
+      method: "POST",
+      body: message,
+    });
+
+    context.log("ntfy response status:", res.status);
+
+    if (!res.ok) {
+      context.log.error(
+        `${res.status}: Failed to send notification for ${pantryId} - ${res.statusText}`,
+      );
+    }
+  } catch (err) {
+    context.log.error(`Error sending notification for ${pantryId}:`, err);
+  }
+}
+
 // Build the ORIGINAL response shape so existing callers don't break
 function legacyResponse(row, pantryId, internalDeviceId) {
-  const totalWeight = (row.scale1 || 0) + (row.scale2 || 0)
-                    + (row.scale3 || 0) + (row.scale4 || 0);
+  const totalWeight =
+    (row.scale1 || 0) +
+    (row.scale2 || 0) +
+    (row.scale3 || 0) +
+    (row.scale4 || 0);
   return {
     pantryId: pantryId,
     deviceId: internalDeviceId,
     timestamp: row.timestamp,
     weight: totalWeight,
     temperature: row.air_temp,
-    doorStatus: (row.door1_open || row.door2_open) ? "Open" : "Closed",
+    doorStatus: row.door1_open || row.door2_open ? "Open" : "Closed",
     battery: row.batt_percent,
     isAnomaly: false,
-    statusMessage: "OK"
+    statusMessage: "OK",
   };
 }
 
@@ -91,7 +128,7 @@ module.exports = async function (context, req) {
     context.res = {
       status: 400,
       headers: CORS,
-      body: { error: "Missing pantryId. Use ?pantryId=4015 or ?pantryId=all" }
+      body: { error: "Missing pantryId. Use ?pantryId=4015 or ?pantryId=all" },
     };
     return;
   }
@@ -101,7 +138,7 @@ module.exports = async function (context, req) {
   const isLegacyCall = !isAll && !isMonitor && !req.query.history;
 
   const historyCount = isMonitor
-    ? 5000   // ~30 days at 10min = 4320, with headroom
+    ? 5000 // ~30 days at 10min = 4320, with headroom
     : Math.min(Math.max(parseInt(req.query.history) || 1, 1), 5000);
 
   let pool;
@@ -112,28 +149,31 @@ module.exports = async function (context, req) {
     let deviceIds;
 
     if (isAll) {
-      const disc = await pool.request().query(
-        `SELECT DISTINCT device_id FROM dbo.PantryLogs`
-      );
-      deviceIds = disc.recordset.map(r => r.device_id);
+      const disc = await pool
+        .request()
+        .query(`SELECT DISTINCT device_id FROM dbo.PantryLogs`);
+      deviceIds = disc.recordset.map((r) => r.device_id);
     } else {
       const resolved = ALIASES[rawId.toLowerCase()] || rawId;
       deviceIds = [resolved];
     }
 
     if (deviceIds.length === 0) {
-      context.res = { status: 404, headers: CORS, body: { error: "No devices found" } };
+      context.res = {
+        status: 404,
+        headers: CORS,
+        body: { error: "No devices found" },
+      };
       return;
     }
 
     // ── Query each device in parallel ────────────────────────────
     const queryDevice = async (deviceId) => {
-      const request = pool.request()
-        .input('deviceId', sql.NVarChar, deviceId);
+      const request = pool.request().input("deviceId", sql.NVarChar, deviceId);
 
       let query;
       if (isMonitor) {
-        request.input('count', sql.Int, historyCount);
+        request.input("count", sql.Int, historyCount);
         query = `
           SELECT TOP (@count) ${SELECT_COLS}
           FROM dbo.PantryLogs
@@ -142,7 +182,7 @@ module.exports = async function (context, req) {
           ORDER BY timestamp DESC
         `;
       } else {
-        request.input('count', sql.Int, historyCount);
+        request.input("count", sql.Int, historyCount);
         query = `
           SELECT TOP (@count) ${SELECT_COLS}
           FROM dbo.PantryLogs
@@ -154,45 +194,72 @@ module.exports = async function (context, req) {
       const result = await request.query(query);
 
       if (result.recordset.length === 0)
-        return [deviceId, { device_id: deviceId, timestamp: null, error: "No data" }];
+        return [
+          deviceId,
+          { device_id: deviceId, timestamp: null, error: "No data" },
+        ];
 
       if (historyCount === 1 && !isMonitor)
         return [deviceId, result.recordset[0]];
 
-      return [deviceId, {
-        device_id: deviceId,
-        latest: result.recordset[0],
-        count: result.recordset.length,
-        history: result.recordset,
-      }];
+      return [
+        deviceId,
+        {
+          device_id: deviceId,
+          latest: result.recordset[0],
+          count: result.recordset.length,
+          history: result.recordset,
+        },
+      ];
     };
 
     // Legacy single-device path returns early (unchanged behavior)
     if (isLegacyCall) {
-      const result = await pool.request()
-        .input('deviceId', sql.NVarChar, deviceIds[0])
-        .query(`SELECT TOP (1) ${SELECT_COLS} FROM dbo.PantryLogs WHERE device_id = @deviceId ORDER BY timestamp DESC`);
+      const result = await pool
+        .request()
+        .input("deviceId", sql.NVarChar, deviceIds[0])
+        .query(
+          `SELECT TOP (1) ${SELECT_COLS} FROM dbo.PantryLogs WHERE device_id = @deviceId ORDER BY timestamp DESC`,
+        );
       if (result.recordset.length === 0) {
-        context.res = { status: 404, headers: CORS, body: { error: "No data found" } };
+        context.res = {
+          status: 404,
+          headers: CORS,
+          body: { error: "No data found" },
+        };
         return;
       }
-      context.res = { headers: CORS, body: legacyResponse(result.recordset[0], rawId, deviceIds[0]) };
+      context.res = {
+        headers: CORS,
+        body: legacyResponse(result.recordset[0], rawId, deviceIds[0]),
+      };
       return;
     }
 
     const pairs = await Promise.all(deviceIds.map(queryDevice));
     const results = Object.fromEntries(pairs);
 
+    for (const [deviceId, data] of Object.entries(results)) {
+      context.log("Sending test notification for device:", deviceId);
+
+      await sendNotifications(
+        context,
+        deviceId,
+        "Test notification from GetLatestPantry function",
+      );
+    }
+
     // "all" or multi-device: return keyed object
     context.res = { headers: CORS, body: results };
-
   } catch (err) {
     context.log.error("DB error:", err.message);
     context.res = {
       status: 500,
       headers: CORS,
       // Original returned just a string for errors
-      body: isLegacyCall ? "Database Error" : { error: "Database error", detail: err.message },
+      body: isLegacyCall
+        ? "Database Error"
+        : { error: "Database error", detail: err.message },
     };
   } finally {
     if (pool) await pool.close();
