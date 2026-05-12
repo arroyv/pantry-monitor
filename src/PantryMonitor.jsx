@@ -1241,6 +1241,8 @@ export default function PantryMonitor() {
   const [tab, setTab] = useState("dashboard");
   const maint = useRef({});
   const seen = useRef(new Set());
+  const [subscribeModal, setSubscribeModal] = useState(false);
+  const [selectedPantries, setSelectedPantries] = useState({});
 
   useEffect(() => {
     const t=sGet("pm-t",null); if(t)setT(t);
@@ -1328,6 +1330,13 @@ export default function PantryMonitor() {
   const warnN = Object.values(analysis).filter(r=>r.status==="warning").length;
   const totalChecks = Object.values(analysis).reduce((s,r)=>s+r.issues.length,0);
 
+  function togglePantrySelection(id) {
+    setSelectedPantries(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  }
+
   return (
     <div style={{ minHeight:"100vh", backgroundColor:C.bg, color:C.tx, fontFamily:"'DM Sans','Helvetica Neue',sans-serif", padding:"16px 16px 40px" }}>
       <style>{`
@@ -1370,6 +1379,98 @@ export default function PantryMonitor() {
             style={{ padding:"5px 12px", borderRadius:5, border:`1px solid ${C.border}`, backgroundColor:C.card, color:C.txD, fontSize:11, cursor:"pointer", opacity:loading?0.5:1 }}>
             {loading?"...":"Refresh"}
           </button>
+          {/* Subscribe to notifications */}
+          <div style={{ position:"relative" }}>
+            <button onClick={()=>setSubscribeModal(prev => !prev)} style={{ padding:"5px 12px", borderRadius:5, border:`1px solid ${C.border}`, backgroundColor:C.card, color:C.txD, fontSize:11, cursor:"pointer" }}>
+            Subscribe
+            </button>
+            {subscribeModal && (
+              <div
+                style={{
+                  position:"absolute",
+                  top:"calc(100% + 8px)",
+                  right:0,
+                  width:260,
+                  backgroundColor:C.card,
+                  border:`1px solid ${C.border}`,
+                  borderRadius:10,
+                  padding:10,
+                  zIndex:9999,
+                  boxShadow:"0 12px 30px rgba(0,0,0,0.35)",
+                }}
+              >
+                <div style={{fontSize:13,fontWeight:700,color:C.tx,marginBottom:8}}>
+                  Subscribe to pantries
+                </div>
+
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {sortedDevs.map((id) => {
+                    const label = nicks[id] || id;
+                    const selected = !!selectedPantries[id];
+
+                    return (
+                      <button
+                        key={id}
+                        onClick={() => togglePantrySelection(id)}
+                        style={{
+                          width:"100%",
+                          textAlign:"left",
+                          padding:"9px 10px",
+                          borderRadius:8,
+                          border:selected ? `2px solid ${C.acc}` : `1px solid ${C.border}`,
+                          backgroundColor:selected ? C.accD : "transparent",
+                          color:C.txD,
+                          cursor:"pointer",
+                          fontSize:12,
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div style={{display:"flex",justifyContent:"flex-end",gap:6,marginTop:10}}>
+                  <button
+                    onClick={() => setSubscribeModal(false)}
+                    style={{
+                      padding:"5px 10px",
+                      borderRadius:5,
+                      border:`1px solid ${C.border}`,
+                      backgroundColor:C.card,
+                      color:C.txD,
+                      fontSize:11,
+                      cursor:"pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const pantryIds = Object.keys(selectedPantries).filter(
+                        id => selectedPantries[id]
+                      );
+
+                      console.log("Selected pantries:", pantryIds);
+                      setSubscribeModal(false);
+                    }}
+                    style={{
+                      padding:"5px 10px",
+                      borderRadius:5,
+                      border:`1px solid ${C.border}`,
+                      backgroundColor:C.card,
+                      color:C.txD,
+                      fontSize:11,
+                      cursor:"pointer",
+                    }}
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           {/* View toggle */}
           <div style={{ display:"flex", borderRadius:20, border:`1px solid ${C.border}`, backgroundColor:C.card, overflow:"hidden" }}>
             <button onClick={()=>setSimpleView(true)} style={{ padding:"4px 12px", fontSize:11, cursor:"pointer", border:"none", backgroundColor:simpleView?C.accD:"transparent", color:simpleView?C.acc:C.txD, fontWeight:simpleView?700:400 }}>Overview</button>
