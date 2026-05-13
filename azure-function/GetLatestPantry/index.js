@@ -91,6 +91,84 @@ async function sendNotifications(context, pantryId, message) {
   }
 }
 
+const lastNotifiedByDevice = new Map();
+
+const ALERT_LIMITS = {
+  batteryPercent: 20,
+  rssi: -115,
+};
+
+// Decide whether the latest pantry row needs a notification.
+function getAlertMessage(deviceId, row) {
+  if (!row) return null;
+
+  const problems = [];
+
+  if (
+    row.batt_percent != null &&
+    row.batt_percent <= ALERT_LIMITS.batteryPercent
+  ) {
+    problems.push(`battery is low (${row.batt_percent}%)`);
+  }
+
+  if (row.rssi != null && row.rssi <= ALERT_LIMITS.rssi) {
+    problems.push(`connection signal is weak (RSSI ${row.rssi})`);
+  }
+
+  if (
+    row.scale1_disconnect ||
+    row.scale2_disconnect ||
+    row.scale3_disconnect ||
+    row.scale4_disconnect
+  ) {
+    problems.push("one or more scales are disconnected");
+  }
+
+  if (
+    row.scale1_suspect ||
+    row.scale2_suspect ||
+    row.scale3_suspect ||
+    row.scale4_suspect
+  ) {
+    problems.push("one or more scale readings look suspicious");
+  }
+
+  if (problems.length === 0) {
+    return null;
+  }
+
+  return `${deviceId} needs attention: ${problems.join(", ")}`;
+}
+
+// Send notification only once for each latest timestamp.
+async function notifyIfNeeded(context, deviceId, latestRow) {
+  if (!latestRow || !latestRow.timestamp) {
+    return;
+  }
+
+  const alertMessage = getAlertMessage(deviceId, latestRow);
+
+  if (!alertMessage) {
+    return;
+  }
+
+  const latestTimestamp = new Date(latestRow.timestamp).toISOString();
+  const lastNotifiedTimestamp = lastNotifiedByDevice.get(deviceId);
+
+  if (lastNotifiedTimestamp === latestTimestamp) {
+    context.log(
+      `Skipping duplicate notification for ${deviceId} at ${latestTimestamp}`,
+    );
+    return;
+  }
+
+  context.log(`Sending alert notification for ${deviceId}: ${alertMessage}`);
+
+  await sendNotifications(context, deviceId, alertMessage);
+
+  lastNotifiedByDevice.set(deviceId, latestTimestamp);
+}
+
 // Build the ORIGINAL response shape so existing callers don't break
 function legacyResponse(row, pantryId, internalDeviceId) {
   const totalWeight =
@@ -240,13 +318,9 @@ module.exports = async function (context, req) {
     const results = Object.fromEntries(pairs);
 
     for (const [deviceId, data] of Object.entries(results)) {
-      context.log("Sending test notification for device:", deviceId);
+      const latestRow = data.latest || data;
 
-      await sendNotifications(
-        context,
-        deviceId,
-        "Test notification from GetLatestPantry function",
-      );
+      await notifyIfNeeded(context, deviceId, latestRow);
     }
 
     // "all" or multi-device: return keyed object
