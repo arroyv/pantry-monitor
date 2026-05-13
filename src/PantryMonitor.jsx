@@ -24,7 +24,7 @@ function sSet(k, v) {
 const DEFS = {
   staleMinutes: 60,
   offlineHours: 24,
-  battLow: 100,
+  battLow: 99,
   battCritical: 10,
   tempMin: -5,
   tempMax: 40,
@@ -201,6 +201,12 @@ function pointChecks(row, T, history) {
     });
 
   const b = N(row.batt_percent);
+  console.log(
+    `[battery check] batt_percent raw:`,
+    row.batt_percent,
+    "→ parsed:",
+    b,
+  );
   if (b !== null) {
     if (b <= T.battCritical)
       iss.push({
