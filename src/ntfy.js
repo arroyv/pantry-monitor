@@ -7,7 +7,7 @@ const PANTRY_TOPIC_MAP = {
   StPaulChurchPantry: "pantry-monitor-StPaulChurch",
 };
 
-const BATTERY_TYPES = new Set(["battery", "batt_drain"]);
+const BATTERY_TYPES = new Set(["battery", "batt_drain", "pressure"]);
 
 // Persists across 5-min polls; cleared on page reload
 const _alerted = new Set();
@@ -31,15 +31,9 @@ export async function notifyBatteryIssues(pantryId, issues) {
       await fetch(`${NTFY_SERVER}/${topic}`, {
         method: "POST",
         headers: {
-          Title: `${issue.s === "critical" ? "🔴 CRITICAL" : "🟡 Warning"} — ${pantryId}`,
-          Priority: issue.s === "critical" ? "urgent" : "high",
-          Tags:
-            issue.s === "critical"
-              ? "rotating_light,battery"
-              : "warning,battery",
-          "Content-Type": "text/plain",
+          Title: `${issue.s} - ${issue.t}`,
         },
-        body: issue.m, // e.g. "Battery critical: 8%" or "Battery draining 18%/day, ~2 days left"
+        body: issue.m,
       });
       _alerted.add(key);
       console.log(`[ntfy] Sent: ${key}`);

@@ -24,8 +24,8 @@ function sSet(k, v) {
 const DEFS = {
   staleMinutes: 60,
   offlineHours: 24,
-  battLow: 99,
-  battCritical: 99,
+  battLow: 20,
+  battCritical: 10,
   tempMin: -5,
   tempMax: 40,
   humidityMax: 95,
@@ -201,18 +201,7 @@ function pointChecks(row, T, history) {
     });
 
   const b = N(row.batt_percent);
-  console.log(
-    `[battery check] batt_percent raw:`,
-    row.batt_percent,
-    "→ parsed:",
-    b,
-  );
-  console.log(
-    `[battery check] T.battLow:`,
-    T.battLow,
-    "T.battCritical:",
-    T.battCritical,
-  );
+
   if (b !== null) {
     if (b <= T.battCritical)
       iss.push({
@@ -3526,7 +3515,7 @@ export default function PantryMonitor() {
 
   useEffect(() => {
     for (const [dev, data] of Object.entries(analysis)) {
-      console.log("Device IDs:", Object.keys(analysis));
+      // console.log("Device IDs:", Object.keys(analysis));
       notifyBatteryIssues(dev, data.issues);
     }
   }, [analysis]);
