@@ -207,6 +207,12 @@ function pointChecks(row, T, history) {
     "→ parsed:",
     b,
   );
+  console.log(
+    `[battery check] T.battLow:`,
+    T.battLow,
+    "T.battCritical:",
+    T.battCritical,
+  );
   if (b !== null) {
     if (b <= T.battCritical)
       iss.push({
