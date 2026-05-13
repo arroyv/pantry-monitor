@@ -13,7 +13,12 @@ const BATTERY_TYPES = new Set(["battery", "batt_drain"]);
 const _alerted = new Set();
 
 export async function notifyBatteryIssues(pantryId, issues) {
+  console.log(
+    `[ntfy] ${pantryId} — issues:`,
+    issues.map((i) => i.t),
+  );
   const topic = PANTRY_TOPIC_MAP[pantryId];
+  console.log(`[ntfy] ${pantryId} — topic resolved to:`, topic);
   if (!topic) return; // unmapped pantry, skip silently
 
   const batteryIssues = issues.filter((i) => BATTERY_TYPES.has(i.t));
