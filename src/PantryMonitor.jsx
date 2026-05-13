@@ -25,7 +25,7 @@ const DEFS = {
   staleMinutes: 60,
   offlineHours: 24,
   battLow: 99,
-  battCritical: 10,
+  battCritical: 99,
   tempMin: -5,
   tempMax: 40,
   humidityMax: 95,
