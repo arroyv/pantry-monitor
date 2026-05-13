@@ -1,10 +1,10 @@
 const NTFY_SERVER = "https://ntfy.sh";
 
 const PANTRY_TOPIC_MAP = {
+  HallerLakePantry: "pantry-monitor-HallerLake",
+  Greenwood: "pantry-monitor-GreenWood",
   BeaconHill: "pantry-monitor-BeaconHill",
-  GreenWood: "pantry-monitor-GreenWood",
-  HallerLake: "pantry-monitor-HallerLake",
-  StPaulChurch: "pantry-monitor-StPaulChurch",
+  StPaulChurchPantry: "pantry-monitor-StPaulChurch",
 };
 
 const BATTERY_TYPES = new Set(["battery", "batt_drain"]);

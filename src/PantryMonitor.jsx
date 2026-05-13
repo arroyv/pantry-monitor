@@ -24,7 +24,7 @@ function sSet(k, v) {
 const DEFS = {
   staleMinutes: 60,
   offlineHours: 24,
-  battLow: 20,
+  battLow: 100,
   battCritical: 10,
   tempMin: -5,
   tempMax: 40,
