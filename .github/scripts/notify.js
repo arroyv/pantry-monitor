@@ -13,10 +13,7 @@ const PANTRY_TOPIC_MAP = {
 const THRESHOLDS = {
   BATT_LOW: 20,
   BATT_CRITICAL: 10,
-  PRES_MIN: 800, // For testing purpose
-  PRES_MAX: 1200,
   HOURS_24: 24 * 60 * 60 * 1000,
-  DAYS_7: 7 * 24 * 60 * 60 * 1000
 }
 
 async function sendAlert(topic, title, body) {
@@ -85,19 +82,25 @@ async function checkCalibration(pantryId, topic, data, history) {
     );  
   }
 
+  const failingScales = [];
   for (let i = 1; i <= 4; i++) {
     const scale = Number(data[`scale${i}`]);
     if (isNaN(scale)) continue;
 
     if (scale < -2) {
-      await sendAlert(
-        topic,
-        `Calibration Required - ${pantryId}`,
-        `Scale ${i} reading negative (${scale} lbs). Recalibration needed.`
-      );
+      failingScales.push(`Scale ${i} (${scale} lbs)`);
     } 
   }
+
+  if (failingScales.length > 0) {
+    await sendAlert(
+      topic,
+      `Calibration Required - ${pantryId}`,
+      `Scale(s) ${failingScales.join(', ')} reading negative. Recalibration needed.`
+    );
+  }
 }
+
 
 async function main() {
   const res = await fetch(API_URL);
