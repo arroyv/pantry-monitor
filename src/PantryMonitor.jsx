@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { notifyBatteryIssues } from "./ntfy.js";
 
 /* ═══════════════════════════════════════════════════════════════════
    STORAGE
@@ -3512,13 +3511,6 @@ export default function PantryMonitor() {
     }
     return res;
   }, [pH, T]);
-
-  useEffect(() => {
-    for (const [dev, data] of Object.entries(analysis)) {
-      // console.log("Device IDs:", Object.keys(analysis));
-      notifyBatteryIssues(dev, data.issues);
-    }
-  }, [analysis]);
 
   useEffect(() => {
     const entries = [];

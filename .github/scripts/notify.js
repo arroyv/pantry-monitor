@@ -2,6 +2,7 @@ const API_URL =
   "https://pantryapi-web-d8gzfkftgtb5cfhn.westus2-01.azurewebsites.net/api/GetLatestPantry?pantryId=all&mode=monitor";
 const NTFY_SERVER = "https://ntfy.sh";
 
+// For now, everytimes new pantry is logged or added, we have to manually add it to this map. In the future, we can consider auto-discovering pantry topics based on device_id or other metadata.
 const PANTRY_TOPIC_MAP = {
   HallerLakePantry: "pantry-monitor-HallerLake",
   Greenwood: "pantry-monitor-GreenWood",
@@ -9,18 +10,20 @@ const PANTRY_TOPIC_MAP = {
   StPaulChurchPantry: "pantry-monitor-StPaulChurch",
 };
 
-const BATT_LOW = 20;
-const BATT_CRITICAL = 10;
-const PRES_MIN = 800;
-const PRES_MAX = 1200;
+const THRESHOLDS = {
+  BATT_LOW: 20,
+  BATT_CRITICAL: 10,
+  PRES_MIN: 800, // For testing purpose
+  PRES_MAX: 1200,
+  HOURS_24: 24 * 60 * 60 * 1000,
+  DAYS_7: 7 * 24 * 60 * 60 * 1000
+}
 
-async function sendAlert(topic, title, priority, tags, body) {
+async function sendAlert(topic, title, body) {
   await fetch(`${NTFY_SERVER}/${topic}`, {
     method: "POST",
     headers: {
       Title: title,
-      Priority: priority,
-      Tags: tags,
       "Content-Type": "text/plain",
     },
     body,
@@ -28,45 +31,71 @@ async function sendAlert(topic, title, priority, tags, body) {
   console.log(`[ntfy] Sent: ${title}`);
 }
 
-async function checkBattery(pantryId, topic, data) {
+async function checkBattery(pantryId, topic, data, history) {
   const batt = Number(data.batt_percent);
   if (isNaN(batt)) return;
 
-  if (batt <= BATT_CRITICAL) {
+  const lastSeen = new Date(data.timestamp).getTime();
+  const last24Hours = history.filter(entry => new Date(entry.timestamp) >= new Date(lastSeen - THRESHOLDS.HOURS_24));
+  if (last24Hours.length === 0) {
+    console.warn(`[warn] No data in the last 24 hours for ${pantryId}. Skipping battery check.`);
+    return;
+  }
+  
+  const allZero = last24Hours.every(entry => Number(entry.batt_percent) === 0);
+
+  if (allZero) {
     await sendAlert(
       topic,
-      `CRITICAL Battery - ${pantryId}`,
-      "urgent",
-      "rotating_light,battery",
-      `Battery at ${batt}%. Replace immediately!`,
-    );
-  } else if (batt <= BATT_LOW) {
+      `CRITICAL Battery Issue - ${pantryId}`,
+      `Battery has been at 0% for the last 24 hours. Check power immediately.`);
+  } else if (batt <= THRESHOLDS.BATT_CRITICAL) {
     await sendAlert(
       topic,
-      `Warning Battery - ${pantryId}`,
-      "high",
-      "warning,battery",
+      `MINOR Battery Issue - ${pantryId}`,
       `Battery at ${batt}%. Replace soon.`,
     );
-  } else {
+  } else if (batt <= THRESHOLDS.BATT_LOW) {
+    await sendAlert(
+      topic,
+      `Warning Battery Issue - ${pantryId}`,
+      `Battery at ${batt}%. Worth an attention.`,
+    );
+  } else if (batt > 100) {
+    await sendAlert(
+      topic,
+      `Calibration Required - ${pantryId}`,
+      `Battery reading at ${batt}% — exceeds 100%`
+    );
+  }
+  else {
     console.log(`[ok] ${pantryId} battery healthy at ${batt}%`);
   }
 }
 
-async function checkPressure(pantryId, topic, data) {
-  const pres = Number(data.air_pressure);
-  if (isNaN(pres) || pres <= 0) return;
+async function checkCalibration(pantryId, topic, data, history) {
+  const acc = Number(data.accuracy);
+  const wasPreviouslyCalibrated = history.some(r => Number(r.accuracy) > 0);
 
-  if (pres < PRES_MIN || pres > PRES_MAX) {
+  if (acc === 0 && wasPreviouslyCalibrated) {
     await sendAlert(
       topic,
-      `Warning Pressure - ${pantryId}`,
-      "high",
-      "warning,sos",
-      `Pressure sensor fault: ${pres} hPa (expected ${PRES_MIN}-${PRES_MAX})`,
-    );
-  } else {
-    console.log(`[ok] ${pantryId} pressure normal at ${pres} hPa`);
+      `Calibration Required - ${pantryId}`,
+      `Sensor accuracy is 0, calibration needed.`
+    );  
+  }
+
+  for (let i = 1; i <= 4; i++) {
+    const scale = Number(data[`scale${i}`]);
+    if (isNaN(scale)) continue;
+
+    if (scale < -2) {
+      await sendAlert(
+        topic,
+        `Calibration Required - ${pantryId}`,
+        `Scale ${i} reading negative (${scale} lbs). Recalibration needed.`
+      );
+    } 
   }
 }
 
@@ -75,14 +104,14 @@ async function main() {
   const data = await res.json();
 
   for (const [pantryId, topic] of Object.entries(PANTRY_TOPIC_MAP)) {
-    const pantry = data[pantryId]?.latest;
+    const pantry = data[pantryId].latest;
+    const history = data[pantryId].history;
     if (!pantry) {
-      console.log(`[skip] ${pantryId} — no data`);
       continue;
     }
 
-    await checkBattery(pantryId, topic, pantry);
-    await checkPressure(pantryId, topic, pantry);
+    await checkBattery(pantryId, topic, pantry, history);
+    await checkCalibration(pantryId, topic, pantry, history);
   }
 }
 
