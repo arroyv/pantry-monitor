@@ -1,0 +1,17 @@
+name: Battery Check
+
+on:
+  schedule:
+    - cron: "* * * * *"
+  workflow_dispatch:
+
+jobs:
+  check-battery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run battery check
+        env:
+          API_URL: ${{ secrets.API_URL }}
+        run: node .github/scripts/notify.js
