@@ -103,14 +103,8 @@ async function checkCalibration(pantryId, topic, data, history) {
 
 
 async function main() {
-  console.log("[debug] Script started");
-  console.log("[debug] Fetching:", API_URL);
-
   const res = await fetch(API_URL);
-  console.log("[debug] Response status:", res.status);
   const data = await res.json();
-  console.log("[debug] Response keys:", Object.keys(data));
-  console.log("[debug] Full response:", JSON.stringify(data, null, 2));
 
   for (const [pantryId, topic] of Object.entries(PANTRY_TOPIC_MAP)) {
     const pantry = data[pantryId].latest;
