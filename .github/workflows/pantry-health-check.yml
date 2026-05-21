@@ -10,3 +10,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run battery check
         run: node .github/scripts/notify.js
+
+      - name: Commit state changes
+        run: |
+          git config user.email "pantry-bot@github.com"
+          git config user.name "Pantry Bot"
+          git add .github/scripts/state.json
+          git diff --staged --quiet || git commit -m "chore: update notification state"
+          git push
