@@ -1,8 +1,6 @@
 name: Pantry Health Check
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -10,6 +8,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Run battery check
         run: node .github/scripts/notify.js
