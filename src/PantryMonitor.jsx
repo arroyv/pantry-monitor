@@ -1374,7 +1374,7 @@ export default function PantryMonitor() {
           </h1>
           <div style={{ fontSize:11, color:C.txM, marginTop:2 }}>
             {simpleView
-              ? `${sortedDevs.length} pantries online${lastR?` · updated ${fAge((Date.now()-lastR.getTime())/60000)} ago`:""}`
+              ? `${sortedDevs.length} pantries · ${Object.values(analysis).filter(r => !r.online).length} offline${lastR?` · updated ${fAge((Date.now()-lastR.getTime())/60000)} ago`:""}`
               : `${mode==="demo"?"Demo":"Live"} | ${Object.keys(analysis).length} pantries | ${totalChecks} active findings${lastR?` | refreshed ${fAge((Date.now()-lastR.getTime())/60000)} ago`:""}`
             }
           </div>
