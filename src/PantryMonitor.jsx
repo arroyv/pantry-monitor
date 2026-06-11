@@ -1353,6 +1353,11 @@ export default function PantryMonitor() {
   const critN = Object.values(analysis).filter(r=>r.status==="critical").length;
   const warnN = Object.values(analysis).filter(r=>r.status==="warning").length;
   const totalChecks = Object.values(analysis).reduce((s,r)=>s+r.issues.length,0);
+  const offlineN = sortedDevs.filter(id => {
+    const latest = analysis[id].latest;
+    if (!latest?.timestamp) return true;
+    return (Date.now() - new Date(latest.timestamp).getTime()) / 60000 > T.offlineHours * 60;
+  }).length;
 
   return (
     <div style={{ minHeight:"100vh", backgroundColor:C.bg, color:C.tx, fontFamily:"'DM Sans','Helvetica Neue',sans-serif", padding:"16px 16px 40px" }}>
@@ -1374,7 +1379,7 @@ export default function PantryMonitor() {
           </h1>
           <div style={{ fontSize:11, color:C.txM, marginTop:2 }}>
             {simpleView
-              ? `${sortedDevs.length} pantries · ${Object.values(analysis).filter(r => !r.online).length} offline${lastR?` · updated ${fAge((Date.now()-lastR.getTime())/60000)} ago`:""}`
+              ? `${sortedDevs.length} pantries · ${offlineN} offline${lastR?` · updated ${fAge((Date.now()-lastR.getTime())/60000)} ago`:""}`
               : `${mode==="demo"?"Demo":"Live"} | ${Object.keys(analysis).length} pantries | ${totalChecks} active findings${lastR?` | refreshed ${fAge((Date.now()-lastR.getTime())/60000)} ago`:""}`
             }
           </div>
