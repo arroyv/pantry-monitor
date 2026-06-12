@@ -1177,48 +1177,74 @@ const SS = {
   critical: { emoji:"🔔", label:"Needs attention", bg:"#1a160a", border:"#352d12", lc:"#e3a008" },
 };
 
-function SimplePantryCard({ id, dev, nicks }) {
+function SimplePantryCard({ id, dev, nicks, T }) {
   const label = nicks[id] || id;
-  const sc = SS[dev.status] || SS.ok;
   const latest = dev.latest;
-  const totalW = latest ? [1,2,3,4].reduce((s,i)=>s+(N(latest[`scale${i}`])||0),0) : 0;
-  const ageMin = latest ? (Date.now()-new Date(latest.timestamp).getTime())/60000 : null;
-  const recentOpens = dev.history.slice(0,48).filter(r=>toBool(r.door1_open)||toBool(r.door2_open)).length;
-  const insights = dev.issues.filter(i=>i.t!=="no_data").slice(0,2).map(friendlyInsight);
+
+  // Connectivity status based on data age ONLY — independent of sensor diagnostics
+  const ageMin = latest?.timestamp
+    ? (Date.now() - new Date(latest.timestamp).getTime()) / 60000
+    : null;
+  const connStatus = !latest?.timestamp ? "offline"
+    : ageMin > T.offlineHours * 60 ? "offline"
+    : ageMin > T.staleMinutes      ? "stale"
+    : "online";
+
+  const CONN = {
+    online:  { label:"ONLINE",  color:C.ok, border:C.okBr, bg:C.okB },
+    stale:   { label:"STALE",   color:C.wr, border:C.wrBr, bg:C.wrB },
+    offline: { label:"OFFLINE", color:C.cr, border:C.crBr, bg:C.crB },
+  };
+  const cs = CONN[connStatus];
+
+  const batt = N(latest?.batt_percent);
+  const battColor = batt === null      ? C.txM
+    : batt <= T.battCritical           ? C.cr
+    : batt <= T.battLow                ? C.wr
+    : C.ok;
+
   return (
-    <div style={{borderRadius:12,border:`1px solid ${sc.border}`,backgroundColor:sc.bg,padding:18,display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
-        <div>
-          <div style={{fontSize:17,fontWeight:700,color:C.tx}}>{label}</div>
-          {label!==id && <div style={{fontSize:10,color:C.txM,marginTop:1}}>{id}</div>}
+    <div style={{ borderRadius:10, border:`2px solid ${cs.border}`, backgroundColor:C.card, padding:16, display:"flex", flexDirection:"column", gap:14 }}>
+
+      {/* Header — name + status badge */}
+      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:8 }}>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:16, fontWeight:700, color:C.tx, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{label}</div>
+          {label !== id && <div style={{ fontSize:10, color:C.txM, marginTop:1 }}>{id}</div>}
         </div>
-        <div style={{textAlign:"right"}}>
-          <div style={{fontSize:20}}>{sc.emoji}</div>
-          <div style={{fontSize:10,fontWeight:700,color:sc.lc,marginTop:2}}>{sc.label}</div>
+        <span style={{ flexShrink:0, padding:"3px 10px", borderRadius:4, fontSize:11, fontWeight:700, letterSpacing:"0.8px", color:cs.color, backgroundColor:cs.bg, border:`1px solid ${cs.border}` }}>
+          {cs.label}
+        </span>
+      </div>
+
+      {/* Last seen */}
+      <div>
+        <div style={{ fontSize:10, color:C.txM, textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:3 }}>Last seen</div>
+        <div style={{ fontSize:20, fontWeight:700, color:C.tx, fontFamily:"'DM Mono',monospace" }}>
+          {ageMin !== null ? fAge(ageMin) : "—"}
+        </div>
+        {latest?.timestamp && (
+          <div style={{ fontSize:10, color:C.txM, marginTop:2 }}>
+            {new Date(latest.timestamp).toLocaleString()}
+          </div>
+        )}
+      </div>
+
+      {/* Battery */}
+      <div>
+        <div style={{ fontSize:10, color:C.txM, textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:5 }}>Battery</div>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <span style={{ fontSize:18, fontWeight:700, color:battColor, fontFamily:"'DM Mono',monospace", minWidth:52 }}>
+            {batt !== null ? `${batt}%` : "—"}
+          </span>
+          {batt !== null && (
+            <div style={{ flex:1, height:8, borderRadius:4, backgroundColor:C.border, overflow:"hidden" }}>
+              <div style={{ width:`${Math.min(100, Math.max(0, batt))}%`, height:"100%", borderRadius:4, backgroundColor:battColor }}/>
+            </div>
+          )}
         </div>
       </div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <div style={{flex:1,minWidth:72,padding:"8px 10px",borderRadius:8,backgroundColor:`${C.card}90`,textAlign:"center"}}>
-          <div style={{fontSize:22,fontWeight:700,color:C.tx,fontFamily:"'DM Mono',monospace"}}>{totalW.toFixed(1)}</div>
-          <div style={{fontSize:10,color:C.txM,marginTop:1}}>lbs of food</div>
-        </div>
-        <div style={{flex:1,minWidth:72,padding:"8px 10px",borderRadius:8,backgroundColor:`${C.card}90`,textAlign:"center"}}>
-          <div style={{fontSize:22,fontWeight:700,color:C.tx}}>{recentOpens||"—"}</div>
-          <div style={{fontSize:10,color:C.txM,marginTop:1}}>recent opens</div>
-        </div>
-        <div style={{flex:1,minWidth:72,padding:"8px 10px",borderRadius:8,backgroundColor:`${C.card}90`,textAlign:"center"}}>
-          <div style={{fontSize:15,fontWeight:700,color:ageMin===null?C.txM:C.tx}}>{ageMin!==null?fAge(ageMin):"—"}</div>
-          <div style={{fontSize:10,color:C.txM,marginTop:1}}>last active</div>
-        </div>
-      </div>
-      {insights.length>0 ? (
-        <div style={{display:"flex",flexDirection:"column",gap:4}}>
-          <div style={{fontSize:10,color:C.txM,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,marginBottom:2}}>✨ Insights</div>
-          {insights.map((msg,i)=><div key={i} style={{fontSize:12,color:C.txD,padding:"5px 10px",borderRadius:6,backgroundColor:`${C.card}80`,borderLeft:`2px solid ${sc.border}`}}>{msg}</div>)}
-        </div>
-      ) : (
-        <div style={{fontSize:12,color:C.ok,padding:"6px 10px",borderRadius:6,backgroundColor:C.okB}}>Everything looks great here! 🎉</div>
-      )}
+
     </div>
   );
 }
@@ -1327,6 +1353,11 @@ export default function PantryMonitor() {
   const critN = Object.values(analysis).filter(r=>r.status==="critical").length;
   const warnN = Object.values(analysis).filter(r=>r.status==="warning").length;
   const totalChecks = Object.values(analysis).reduce((s,r)=>s+r.issues.length,0);
+  const offlineN = sortedDevs.filter(id => {
+    const latest = analysis[id].latest;
+    if (!latest?.timestamp) return true;
+    return (Date.now() - new Date(latest.timestamp).getTime()) / 60000 > T.offlineHours * 60;
+  }).length;
 
   return (
     <div style={{ minHeight:"100vh", backgroundColor:C.bg, color:C.tx, fontFamily:"'DM Sans','Helvetica Neue',sans-serif", padding:"16px 16px 40px" }}>
@@ -1348,7 +1379,7 @@ export default function PantryMonitor() {
           </h1>
           <div style={{ fontSize:11, color:C.txM, marginTop:2 }}>
             {simpleView
-              ? `${sortedDevs.length} pantries online${lastR?` · updated ${fAge((Date.now()-lastR.getTime())/60000)} ago`:""}`
+              ? `${sortedDevs.length} pantries · ${offlineN} offline${lastR?` · updated ${fAge((Date.now()-lastR.getTime())/60000)} ago`:""}`
               : `${mode==="demo"?"Demo":"Live"} | ${Object.keys(analysis).length} pantries | ${totalChecks} active findings${lastR?` | refreshed ${fAge((Date.now()-lastR.getTime())/60000)} ago`:""}`
             }
           </div>
@@ -1392,7 +1423,7 @@ export default function PantryMonitor() {
         {sortedDevs.length===0 && <div style={{ padding:40, textAlign:"center", color:C.txM }}>No pantries. {mode==="demo"?"Loading...":"Check API URL in Settings."}</div>}
         {simpleView ? (
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:12 }}>
-            {sortedDevs.map(id => <SimplePantryCard key={id} id={id} dev={analysis[id]} nicks={nicks}/>)}
+            {sortedDevs.map(id => <SimplePantryCard key={id} id={id} dev={analysis[id]} nicks={nicks} T={T}/>)}
           </div>
         ) : (
           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
