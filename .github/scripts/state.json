@@ -1,10 +1,10 @@
 {
   "pantry-monitor-HallerLake::MINOR Battery Issue - HallerLakePantry": "2026-07-15T07:01:38.568Z",
-  "pantry-monitor-StPaulChurch::Calibration Required - StPaulChurchPantry": "2026-10-15T13:01:17.300Z",
+  "pantry-monitor-StPaulChurch::Calibration Required - StPaulChurchPantry": "2026-10-16T13:01:37.915Z",
   "pantry-monitor-BeaconHill::Calibration Required - BeaconHill": "2026-10-06T13:01:13.905Z",
   "pantry-monitor-StPaulChurch::MINOR Battery Issue - StPaulChurchPantry": "2026-10-01T13:01:16.712Z",
   "pantry-monitor-HallerLake::Calibration Required - HallerLakePantry": "2026-09-15T19:01:12.859Z",
-  "pantry-monitor-BeaconHill::Warning Battery Issue - BeaconHill": "2026-10-15T13:01:17.135Z",
+  "pantry-monitor-BeaconHill::Warning Battery Issue - BeaconHill": "2026-10-16T13:01:37.766Z",
   "pantry-monitor-BeaconHill::MINOR Battery Issue - BeaconHill": "2026-09-08T13:01:07.808Z",
   "pantry-monitor-HallerLake::Warning Battery Issue - HallerLakePantry": "2026-07-10T07:01:30.154Z",
   "pantry-monitor-GreenWood::Warning Battery Issue - Greenwood": "2026-07-28T01:01:13.517Z",
@@ -12,5 +12,5 @@
   "pantry-monitor-GreenWood::Calibration Required - Greenwood": "2026-09-02T19:01:11.354Z",
   "pantry-monitor-BeaconHill::CRITICAL Battery Issue - BeaconHill": "2026-09-09T01:00:18.002Z",
   "pantry-monitor-StPaulChurch::Warning Battery Issue - StPaulChurchPantry": "2026-09-29T01:00:18.334Z",
-  "pantry-monitor-StPaulChurch::CRITICAL Battery Issue - StPaulChurchPantry": "2026-10-15T13:01:17.260Z"
+  "pantry-monitor-StPaulChurch::CRITICAL Battery Issue - StPaulChurchPantry": "2026-10-16T13:01:37.877Z"
 }
